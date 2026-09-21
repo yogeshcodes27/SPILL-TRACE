@@ -1,0 +1,82 @@
+{
+  "files": {
+    "code": [
+      "C:\\SPILLTRACE\\package.json",
+      "C:\\SPILLTRACE\\src\\App.jsx",
+      "C:\\SPILLTRACE\\src\\components\\DetectionLayers3D.jsx",
+      "C:\\SPILLTRACE\\src\\components\\DetectionWorkspace.jsx",
+      "C:\\SPILLTRACE\\src\\components\\EvidenceFusionScroll.jsx",
+      "C:\\SPILLTRACE\\src\\components\\HeroOcean3D.jsx",
+      "C:\\SPILLTRACE\\src\\components\\IncidentsArchive.jsx",
+      "C:\\SPILLTRACE\\src\\components\\MaritimeIncidentsMap.jsx",
+      "C:\\SPILLTRACE\\src\\components\\SlickCharacterisationScroll.jsx",
+      "C:\\SPILLTRACE\\src\\components\\SpilltraceLogo.jsx",
+      "C:\\SPILLTRACE\\src\\components\\analysis\\SlickCharacterisationScroll.jsx",
+      "C:\\SPILLTRACE\\src\\components\\attribution\\EvidenceFusionScroll.jsx",
+      "C:\\SPILLTRACE\\src\\components\\common\\SpilltraceLogo.jsx",
+      "C:\\SPILLTRACE\\src\\components\\console\\InvestigationConsoleModal.jsx",
+      "C:\\SPILLTRACE\\src\\components\\console\\InvestigationMap.jsx",
+      "C:\\SPILLTRACE\\src\\components\\console\\InvestigationWorkspace.jsx",
+      "C:\\SPILLTRACE\\src\\components\\detection\\DetectionLayers3D.jsx",
+      "C:\\SPILLTRACE\\src\\components\\detection\\DetectionWorkspace.jsx",
+      "C:\\SPILLTRACE\\src\\components\\drift\\DriftDynamicsSection.jsx",
+      "C:\\SPILLTRACE\\src\\components\\hero\\HeroOcean3D.jsx",
+      "C:\\SPILLTRACE\\src\\components\\hero\\HeroSection.jsx",
+      "C:\\SPILLTRACE\\src\\components\\incidents\\IncidentsArchive.jsx",
+      "C:\\SPILLTRACE\\src\\components\\incidents\\MaritimeIncidentsMap.jsx",
+      "C:\\SPILLTRACE\\src\\components\\index.js",
+      "C:\\SPILLTRACE\\src\\components\\layout\\Footer.jsx",
+      "C:\\SPILLTRACE\\src\\components\\layout\\Navbar.jsx",
+      "C:\\SPILLTRACE\\src\\components\\workflow\\WorkflowSection.jsx",
+      "C:\\SPILLTRACE\\src\\data\\incidentsData.js",
+      "C:\\SPILLTRACE\\src\\main.jsx",
+      "C:\\SPILLTRACE\\src\\services\\map\\basemapProvider.js",
+      "C:\\SPILLTRACE\\src\\services\\map\\mapGeometry.js",
+      "C:\\SPILLTRACE\\src\\services\\map\\mapLayers.js",
+      "C:\\SPILLTRACE\\src\\services\\map\\mapStyles.js",
+      "C:\\SPILLTRACE\\src\\services\\scenariosData.js",
+      "C:\\SPILLTRACE\\src\\services\\spilltraceService.js",
+      "C:\\SPILLTRACE\\src\\services\\types.js",
+      "C:\\SPILLTRACE\\vite.config.js"
+    ],
+    "document": [
+      "C:\\SPILLTRACE\\.agents\\rules\\get-shit-done.md",
+      "C:\\SPILLTRACE\\.agents\\rules\\ponytail.md",
+      "C:\\SPILLTRACE\\.agents\\skills\\get-shit-done\\SKILL.md",
+      "C:\\SPILLTRACE\\.agents\\skills\\ponytail\\SKILL.md",
+      "C:\\SPILLTRACE\\01_PROJECT_DOCUMENTATION.md",
+      "C:\\SPILLTRACE\\02_REQUIREMENTS.md",
+      "C:\\SPILLTRACE\\03_SYSTEM_WORKFLOW.md",
+      "C:\\SPILLTRACE\\04_DATASETS_AND_DATA_COLLECTION.md",
+      "C:\\SPILLTRACE\\CURRENT_PAGES_AND_REPRESENTATION.md",
+      "C:\\SPILLTRACE\\index.html"
+    ],
+    "paper": [],
+    "image": [
+      "C:\\SPILLTRACE\\public\\images\\layers\\layer1_raw_sar.jpg",
+      "C:\\SPILLTRACE\\public\\images\\layers\\layer2_segmentation.jpg",
+      "C:\\SPILLTRACE\\public\\images\\layers\\layer3_lookalike_check.jpg",
+      "C:\\SPILLTRACE\\public\\images\\layers\\layer4_verified_mask.jpg",
+      "C:\\SPILLTRACE\\public\\images\\spilltrace_emblem.png",
+      "C:\\SPILLTRACE\\public\\images\\spilltrace_logo.png"
+    ],
+    "video": []
+  },
+  "total_files": 53,
+  "total_words": 137756,
+  "needs_graph": true,
+  "warning": null,
+  "skipped_sensitive": [],
+  "unclassified": [
+    "C:\\SPILLTRACE\\.gitignore"
+  ],
+  "walk_errors": [],
+  "ignored": [],
+  "pruned_noise_dirs": [
+    "C:\\SPILLTRACE\\dist\\",
+    "C:\\SPILLTRACE\\graphify-out\\",
+    "C:\\SPILLTRACE\\node_modules\\"
+  ],
+  "graphifyignore_patterns": 23,
+  "scan_root": "C:\\SPILLTRACE"
+}

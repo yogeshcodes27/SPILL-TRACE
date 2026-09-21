@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html class="scroll-smooth" lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+  <title>SPILLTRACE — Forensic Maritime Spill Intelligence Platform</title>
+  <meta name="description" content="Advanced 3D ocean wave dynamics, thin-film iridescent oil slick simulation, and satellite maritime intelligence platform built with React and Three.js."/>
+  <link rel="icon" type="image/png" href="/images/spilltrace_emblem.png"/>
+  <!-- Google Fonts: Inter & JetBrains Mono -->
+  <link href="https://fonts.googleapis.com" rel="preconnect"/>
+  <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet"/>
+  <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+            mono: ['JetBrains Mono', 'Roboto Mono', 'SFMono-Regular', 'monospace'],
+          },
+          maxWidth: {
+            'content': '1440px',
+          },
+          letterSpacing: {
+            label: '0.06em',
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+    ::selection { background: #111111; color: #FFFFFF; }
+    ::-webkit-scrollbar { width: 4px; height: 4px; }
+    ::-webkit-scrollbar-track { background: #FFFFFF; }
+    ::-webkit-scrollbar-thumb { background: #111111; }
+
+    /* Nautical Maritime Grayscale Basemap */
+    .maritime-basemap-tiles {
+      filter: grayscale(100%) contrast(92%) brightness(102%) !important;
+    }
+    .technical-map-tooltip {
+      background: #FFFFFF !important;
+      border: 1px solid #111111 !important;
+      border-radius: 0px !important;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12) !important;
+      padding: 4px 8px !important;
+      color: #111111 !important;
+    }
+    .leaflet-tooltip-top:before,
+    .leaflet-tooltip-bottom:before,
+    .leaflet-tooltip-left:before,
+    .leaflet-tooltip-right:before {
+      display: none !important;
+    }
+  </style>
+</head>
+<body class="bg-white text-[#111111] font-sans antialiased">
+  <div id="root"></div>
+  <script type="module" src="/src/main.jsx"></script>
+</body>
+</html>
