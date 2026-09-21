@@ -27,3 +27,12 @@ dist-ssr
 .env
 .env.*
 !.env.example
+
+# Agent customizations (private)
+.agents/
+
+# Root-level documentation (private)
+/*.md
+
+# Knowledge graph output (generated)
+graphify-out/
