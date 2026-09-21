@@ -1,40 +1,46 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
-import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
-import {
-  BASEMAP_MODES,
-  getSatelliteBasemap,
-  getStreetBasemap,
-} from '../../services/map/basemapProvider.js';
-import {
-  toLatLng,
-  toLatLngs,
-} from '../../services/map/mapGeometry.js';
-import {
-  renderSarLayer,
-  renderSegmentationLayer,
-  renderTechnicalSlickLayer,
-  renderDriftLayer,
-  renderMetoceanLayer,
-  renderAisLayer,
-  renderEnsembleLayer,
-} from '../../services/map/mapLayers.js';
-
 /**
- * SPILLTRACE — Forensic Investigation Map Component
- * 
- * Interactive maritime geospatial investigation surface powered by Leaflet.
+ * SPILLTRACE — Forensic Investigation Map Component (Mapbox GL JS Engine)
+ *
+ * Unified maritime geospatial investigation surface replacing Leaflet.
  * Features:
- * - High-resolution global satellite basemap (Esri World Imagery) as primary visual mode
- * - Nautical grayscale geographic basemap (OpenStreetMap)
- * - Offshore geographic alignment for all spills, drift trajectories, and AIS corridors
- * - Sentinel-1 SAR scene footprint with technical metadata
- * - Tab 02 semantic segmentation overlay (oil slick, look-alike, ship wake, low-wind calm)
- * - Tab 03 GIS measurement axes (aligned major/minor axes)
- * - Tab 04 dynamic backward drift trajectory, intermediate advection points, origin uncertainty
- * - Tab 05 AIS candidate tracking, SYN-003 AIS gap callout, SYN-004 abstention
- * - SYN-005 stability ensemble perturbation envelopes
+ * - Single persistent Mapbox GL JS instance across all 7 tabs and 5 scenarios
+ * - Dynamic GeoJSON source updates via source.setData() (zero map recreation)
+ * - Tab-specific camera focus and forensic layer visibility (Tabs 01–07)
+ * - Real-time scenario synchronization (SYN-001 through SYN-005)
+ * - Interactive bidirectional selection (vessels, slick, origin, AIS gap, CPA)
+ * - High-resolution satellite basemap (Mapbox Standard / Satellite) with nautical toggle
+ * - Full telemetry HUD, cursor coordinate tracking, and contextual legend
  */
+
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import mapboxgl from 'mapbox-gl';
+import 'mapbox-gl/dist/mapbox-gl.css';
+
+import {
+  MAPBOX_TOKEN,
+  MAPBOX_STYLES,
+  DEFAULT_BOUNDS,
+  ZOOM_LIMITS,
+  isMapboxConfigured,
+} from '../../services/map/mapboxConfig.js';
+import {
+  SOURCES,
+  registerInvestigationLayers,
+  updateMapboxLayerVisibility,
+} from '../../services/map/mapboxLayers.js';
+import {
+  getMapDataForStage,
+  computeTabBounds,
+} from '../../services/map/mapboxSources.js';
+import { setupMapboxInteractions } from '../../services/map/mapboxInteractions.js';
+import { INITIAL_INCIDENTS } from '../../data/incidentsData.js';
+import { getScenarioIdForIncident } from '../../services/spilltraceService.js';
+
+const BASEMAP_MODES = {
+  SATELLITE: 'satellite',
+  MAP: 'map',
+};
+
 export default function InvestigationMap({
   investigationState,
   activeTab = '02',
@@ -46,16 +52,14 @@ export default function InvestigationMap({
 }) {
   const mapContainerRef = useRef(null);
   const mapRef = useRef(null);
-  const layerGroupsRef = useRef(null);
-  const satelliteLayerRef = useRef(null);
-  const streetLayerRef = useRef(null);
-
+  const mapReadyRef = useRef(false);
   const lastScenarioIdRef = useRef(null);
+  const lastActiveTabRef = useRef(null);
 
-  // Basemap mode: SATELLITE is default for maritime remote sensing
+  // Basemap mode: SATELLITE (default) | MAP (nautical light)
   const [basemapMode, setBasemapMode] = useState(BASEMAP_MODES.SATELLITE);
 
-  // HUD and Layers UI state
+  // Real-time telemetry HUD state
   const [cursorCoords, setCursorCoords] = useState(null);
   const [layersMenuOpen, setLayersMenuOpen] = useState(false);
   const [visibleLayers, setVisibleLayers] = useState({
@@ -68,279 +72,230 @@ export default function InvestigationMap({
   });
 
   const scenario = investigationState?.scenario;
-  const scenarioId = investigationState?.scenarioId;
-  const spill = scenario?.spill;
+  const scenarioId = investigationState?.scenarioId || scenario?.id || 'SYN-001';
+  const detection = investigationState?.detection || scenario?.spill;
+  const slick = investigationState?.slick || scenario?.spill;
   const drift = investigationState?.drift || scenario?.drift?.backward;
   const aisTraffic = investigationState?.aisTraffic || scenario?.aisTraffic;
   const ensemble = investigationState?.ensemble || scenario?.ensembleRuns;
 
-  // ─── 1. Initialize Map & Basemap Providers ───────────────────────────
-  useEffect(() => {
-    if (!mapContainerRef.current) return;
-
-    // Safety: ensure container doesn't have an orphaned Leaflet ID
-    if (mapContainerRef.current._leaflet_id && !mapRef.current) {
-      delete mapContainerRef.current._leaflet_id;
-    }
-
-    if (mapRef.current) return;
+  // ─── 1. Synchronize Stage-Aware GeoJSON Sources ───────────────────────
+  const syncSourceData = useCallback(() => {
+    const map = mapRef.current;
+    if (!map || !mapReadyRef.current || !scenario) return;
 
     try {
-      const map = L.map(mapContainerRef.current, {
-        zoomControl: false,
-        attributionControl: false,
-        fadeAnimation: true,
-        zoomSnap: 0.25,
-        zoomDelta: 0.5,
-        maxZoom: 18,
-        minZoom: 3,
-      });
-      mapRef.current = map;
-
-      // Instantiate both basemaps via provider service
-      const satLayer = getSatelliteBasemap(L);
-      const streetLayer = getStreetBasemap(L);
-      satelliteLayerRef.current = satLayer;
-      streetLayerRef.current = streetLayer;
-
-      // Add default satellite basemap
-      if (satLayer) {
-        satLayer.addTo(map);
-      } else if (streetLayer) {
-        streetLayer.addTo(map);
-      }
-
-      // Instantiate fresh forensic layer groups
-      const layers = {
-        sarFootprint: L.layerGroup().addTo(map),
-        segmentation: L.layerGroup().addTo(map),
-        slick: L.layerGroup().addTo(map),
-        drift: L.layerGroup().addTo(map),
-        metocean: L.layerGroup().addTo(map),
-        ais: L.layerGroup().addTo(map),
-        ensemble: L.layerGroup().addTo(map),
-      };
-      layerGroupsRef.current = layers;
-
-      // Cursor position readout
-      map.on('mousemove', (e) => {
-        setCursorCoords({
-          lat: e.latlng.lat.toFixed(4),
-          lng: e.latlng.lng.toFixed(4),
-        });
-      });
-
-      map.on('mouseout', () => {
-        setCursorCoords(null);
-      });
-
-      // Default initial view centered offshore Tamil Nadu shelf in Bay of Bengal
-      map.setView([11.238, 80.184], 10);
-    } catch (err) {
-      console.error('Failed to initialize Leaflet investigation map:', err);
-    }
-
-    return () => {
-      if (mapRef.current) {
-        try {
-          mapRef.current.remove();
-        } catch (e) {
-          console.warn('Map cleanup warning:', e);
+      const dataMap = getMapDataForStage(
+        {
+          scenario,
+          scenarioId,
+          detection,
+          slick,
+          drift,
+          aisTraffic,
+          ensemble,
+        },
+        activeTab,
+        {
+          selectedCandidateMmsi,
+          highlightedFactor,
         }
-        mapRef.current = null;
-        layerGroupsRef.current = null;
-        satelliteLayerRef.current = null;
-        streetLayerRef.current = null;
-      }
-      if (mapContainerRef.current?._leaflet_id) {
-        delete mapContainerRef.current._leaflet_id;
-      }
-    };
-  }, []);
+      );
 
-  // ─── 2. Basemap Mode Switcher ─────────────────────────────────────────
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
-
-    const sat = satelliteLayerRef.current;
-    const street = streetLayerRef.current;
-
-    if (basemapMode === BASEMAP_MODES.SATELLITE) {
-      if (street && map.hasLayer(street)) map.removeLayer(street);
-      if (sat && !map.hasLayer(sat)) map.addLayer(sat);
-    } else {
-      if (sat && map.hasLayer(sat)) map.removeLayer(sat);
-      if (street && !map.hasLayer(street)) map.addLayer(street);
+      Object.entries(dataMap).forEach(([sourceId, geoJson]) => {
+        const src = map.getSource(sourceId);
+        if (src) {
+          src.setData(geoJson);
+        }
+      });
+    } catch (err) {
+      console.warn('Error syncing Mapbox investigation sources:', err);
     }
-  }, [basemapMode]);
+  }, [scenario, scenarioId, detection, slick, drift, aisTraffic, ensemble, activeTab, selectedCandidateMmsi, highlightedFactor]);
 
-  // ─── 3. Tight Camera Fit to Investigation Extent ─────────────────────
-  const fitInvestigation = useCallback(() => {
+
+  // ─── 2. Camera Fit Helpers ───────────────────────────────────────────
+  const fitCameraToExtent = useCallback((tab = activeTab, duration = 800) => {
     const map = mapRef.current;
     if (!map || !scenario) return;
 
     try {
-      const bounds = L.latLngBounds([]);
+      const bounds = computeTabBounds(
+        scenario,
+        tab,
+        drift,
+        aisTraffic,
+        selectedCandidateMmsi
+      );
 
-      // Include slick centroid and polygon
-      if (scenario.spill?.centroid) {
-        bounds.extend(toLatLng(scenario.spill.centroid));
-      }
-      if (scenario.spill?.polygon) {
-        toLatLngs(scenario.spill.polygon).forEach((pt) => bounds.extend(pt));
-      }
-
-      // Include reconstructed origin
-      if (drift?.originCentroid) {
-        bounds.extend(toLatLng(drift.originCentroid));
-      }
-
-      // Include candidate vessel positions
-      if (aisTraffic?.tracks) {
-        const cand =
-          aisTraffic.tracks.find((t) => t.mmsi === selectedCandidateMmsi) ||
-          aisTraffic.tracks[0];
-        if (cand?.positions) {
-          cand.positions.forEach((p) => bounds.extend([p.lat, p.lon]));
-        }
-      }
-
-      if (bounds.isValid()) {
+      if (bounds) {
+        const padding = { top: 50, bottom: 50, left: 60, right: 60 };
+        const maxZoom = tab === '03' ? 14 : tab === '02' ? 13 : 11;
         map.fitBounds(bounds, {
-          padding: [50, 50],
-          maxZoom: 13,
-          animate: true,
+          padding,
+          maxZoom,
+          duration,
         });
       }
     } catch (err) {
-      console.warn('fitInvestigation error:', err);
+      console.warn('Error fitting Mapbox camera:', err);
     }
-  }, [scenario, drift, aisTraffic, selectedCandidateMmsi]);
+  }, [scenario, drift, aisTraffic, activeTab, selectedCandidateMmsi]);
 
-  // Trigger camera fit ONLY on scenario change or initial load (not tab toggle)
+  // ─── 3. Initialize Persistent Mapbox Engine ──────────────────────────
   useEffect(() => {
-    if (!scenarioId || !scenario) return;
+    if (!mapContainerRef.current || mapRef.current || !isMapboxConfigured()) return;
 
-    if (lastScenarioIdRef.current !== scenarioId) {
-      lastScenarioIdRef.current = scenarioId;
-      const timer = setTimeout(() => {
-        fitInvestigation();
-      }, 140);
-      return () => clearTimeout(timer);
-    }
-  }, [scenarioId, scenario, fitInvestigation]);
+    mapboxgl.accessToken = MAPBOX_TOKEN;
 
-  // ─── 4. Stage-Specific Forensic Layer Rendering ───────────────────────
-  useEffect(() => {
-    const layers = layerGroupsRef.current;
-    if (!layers || !scenario) return;
+    // Use satellite-streets-v12 / standard-satellite
+    const initialStyle =
+      basemapMode === BASEMAP_MODES.SATELLITE
+        ? (MAPBOX_STYLES.STANDARD_SATELLITE || MAPBOX_STYLES.SATELLITE)
+        : MAPBOX_STYLES.STREETS;
 
-    const isSat = basemapMode === BASEMAP_MODES.SATELLITE;
+    const map = new mapboxgl.Map({
+      container: mapContainerRef.current,
+      style: initialStyle,
+      center: [80.184, 11.238], // Default offshore Bay of Bengal
+      zoom: 9,
+      attributionControl: false,
+      maxZoom: ZOOM_LIMITS.MAX,
+      minZoom: ZOOM_LIMITS.MIN,
+    });
+    mapRef.current = map;
 
-    try {
-      // 1. Technical SAR Footprint (Clean frame over satellite imagery, no opaque box)
-      renderSarLayer(
-        layers.sarFootprint,
-        scenario,
-        visibleLayers.sarFootprint,
-        isSat
-      );
+    // Load Handler: Register all sources, layers & event listeners once
+    let cleanupInteractions = () => {};
 
-      // 2. Tab 02: Semantic Segmentation Visualization
-      if (activeTab === '02') {
-        renderSegmentationLayer(
-          layers.segmentation,
-          scenario,
-          visibleLayers.spill,
-          onFeatureSelect
-        );
-        layers.slick.clearLayers();
-      } else {
-        layers.segmentation.clearLayers();
-        // 3. Tabs 03–07: Technical Slick Geometry (with measurement axes on Tab 03)
-        renderTechnicalSlickLayer(
-          layers.slick,
-          scenario,
-          visibleLayers.spill,
-          activeTab === '03',
-          onFeatureSelect
-        );
-      }
+    const onStyleReady = () => {
+      registerInvestigationLayers(map);
+      mapReadyRef.current = true;
 
-      // 4. Drift & Origin Uncertainty (Tabs 04–07)
-      const showDrift = visibleLayers.drift && (activeTab === '04' || activeTab === '05' || activeTab === '06' || activeTab === '07');
-      renderDriftLayer(
-        layers.drift,
-        scenario,
-        drift,
-        showDrift,
-        onFeatureSelect,
-        highlightedFactor
-      );
+      // Populate current scenario data
+      syncSourceData();
 
-      // 5. Metocean Vectors (Wind & Current) (Tabs 04 & 06)
-      renderMetoceanLayer(
-        layers.metocean,
-        scenario,
-        visibleLayers.metocean && (activeTab === '04' || activeTab === '06')
-      );
+      // Set initial layer visibility for current tab
+      updateMapboxLayerVisibility(map, activeTab, visibleLayers, scenarioId);
 
-      // 6. AIS Vessel Trajectories (Tabs 05–07)
-      const showAis = visibleLayers.ais && (activeTab === '05' || activeTab === '06' || activeTab === '07');
-      renderAisLayer(
-        layers.ais,
-        aisTraffic,
-        scenarioId,
-        selectedCandidateMmsi,
+      // Fit initial camera
+      fitCameraToExtent(activeTab, 0);
+
+      // Setup interactions
+      cleanupInteractions();
+      cleanupInteractions = setupMapboxInteractions(map, {
         onSelectCandidate,
-        showAis,
-        drift,
-        highlightedFactor
-      );
+        onFeatureSelect,
+        onSelectIncident: (incId) => {
+          if (onSelectCandidate) onSelectCandidate(incId);
+        },
+        onHoverCoords: (coords) => setCursorCoords(coords),
+      });
+    };
 
-      // 7. Ensemble Envelopes (SYN-005) (Tabs 04 & 06)
-      renderEnsembleLayer(
-        layers.ensemble,
-        ensemble,
-        scenarioId,
-        visibleLayers.uncertainty && (activeTab === '04' || activeTab === '06'),
-        scenario
-      );
-    } catch (err) {
-      console.error('Error rendering forensic map layers:', err);
+    map.on('load', onStyleReady);
+
+    // Mouseout coordinates clearing
+    const onMouseOut = () => setCursorCoords(null);
+    map.getCanvas().addEventListener('mouseout', onMouseOut);
+
+    return () => {
+      cleanupInteractions();
+      map.getCanvas()?.removeEventListener('mouseout', onMouseOut);
+      mapReadyRef.current = false;
+      map.remove();
+      mapRef.current = null;
+    };
+  }, []); // Run once on mount
+
+  // ─── 4. Switch Basemap Style (SATELLITE | MAP) ────────────────────────
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReadyRef.current) return;
+
+    const targetStyle =
+      basemapMode === BASEMAP_MODES.SATELLITE
+        ? (MAPBOX_STYLES.STANDARD_SATELLITE || MAPBOX_STYLES.SATELLITE)
+        : MAPBOX_STYLES.STREETS;
+
+    mapReadyRef.current = false;
+    map.setStyle(targetStyle);
+
+    map.once('style.load', () => {
+      registerInvestigationLayers(map);
+      mapReadyRef.current = true;
+      syncSourceData();
+      updateMapboxLayerVisibility(map, activeTab, visibleLayers, scenarioId);
+    });
+  }, [basemapMode]);
+
+  // ─── 5. Update Sources When Scenario / Parameters Change ─────────────
+  useEffect(() => {
+    if (!mapReadyRef.current) return;
+    syncSourceData();
+
+    // Trigger camera fit when scenario changes
+    if (scenarioId && lastScenarioIdRef.current !== scenarioId) {
+      lastScenarioIdRef.current = scenarioId;
+      fitCameraToExtent(activeTab, 900);
     }
-  }, [
-    scenario,
-    scenarioId,
-    activeTab,
-    drift,
-    aisTraffic,
-    ensemble,
-    selectedCandidateMmsi,
-    highlightedFactor,
-    visibleLayers,
-    basemapMode,
-    onSelectCandidate,
-    onFeatureSelect,
-  ]);
+  }, [syncSourceData, scenarioId, activeTab, fitCameraToExtent]);
+
+  // ─── 6. Update Layer Visibility & Sources When Tab or Toggles Change ─
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReadyRef.current) return;
+
+    syncSourceData();
+    updateMapboxLayerVisibility(map, activeTab, visibleLayers, scenarioId);
+
+    // Adjust camera when switching tabs
+    if (activeTab && lastActiveTabRef.current !== activeTab) {
+      lastActiveTabRef.current = activeTab;
+      fitCameraToExtent(activeTab, 700);
+    }
+  }, [activeTab, visibleLayers, scenarioId, fitCameraToExtent, syncSourceData]);
 
   // Toggle single layer visibility
   const toggleLayer = (layerKey) => {
     setVisibleLayers((prev) => ({ ...prev, [layerKey]: !prev[layerKey] }));
   };
 
+  // ─── Fallback When Mapbox Token Missing ──────────────────────────────
+  if (!isMapboxConfigured()) {
+    return (
+      <div className="relative w-full h-full bg-[#0A1118] flex items-center justify-center font-mono select-none">
+        <div className="border border-white/20 bg-[#111111]/95 p-8 max-w-md text-center text-white shadow-2xl">
+          <div className="w-8 h-8 mx-auto mb-3 border-2 border-amber-400 border-dashed rounded-full flex items-center justify-center text-amber-400 font-bold">
+            !
+          </div>
+          <div className="text-xs uppercase tracking-wider font-bold mb-2 text-white">
+            MAPBOX UNAVAILABLE
+          </div>
+          <p className="text-[11px] text-[#888888] mb-4 leading-relaxed">
+            Add <code className="text-amber-300 font-bold">VITE_MAPBOX_TOKEN</code> to your{' '}
+            <code className="text-white">.env</code> file to enable the interactive satellite
+            investigation map.
+          </p>
+          <div className="text-[10px] text-[#666666] border-t border-white/10 pt-3">
+            ACTIVE CASE // {scenarioId} · FORENSIC ANALYTICS OPERATIONAL
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="relative w-full h-full bg-[#0A1118] overflow-hidden select-none">
-      {/* ══ Leaflet DOM Mount Container ═════════════════════════════ */}
+      {/* ══ Mapbox DOM Canvas Mount Container ═══════════════════════ */}
       <div ref={mapContainerRef} className="w-full h-full z-0" />
 
-      {/* ══ Top-Left Technical HUD ══════════════════════════════════ */}
-      <div className="absolute top-3 left-3 z-[400] pointer-events-none flex flex-col gap-1.5 font-mono">
+      {/* ══ Top-Left Technical Telemetry HUD ════════════════════════ */}
+      <div className="absolute top-3 left-3 z-30 pointer-events-none flex flex-col gap-1.5 font-mono">
         <div className="bg-[#111111]/90 backdrop-blur-xs text-white px-3 py-1.5 border border-white/20 shadow-md flex items-center gap-2">
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
           <span className="text-[11px] font-bold uppercase tracking-wider">
-            {scenarioId || 'SYN-001'} · FORENSIC MAP
+            {scenarioId} · FORENSIC MAP
           </span>
           <span className="text-white/40">|</span>
           <span className="text-[10px] text-white/70">WGS 84 · EPSG:4326</span>
@@ -350,7 +305,7 @@ export default function InvestigationMap({
           </span>
         </div>
 
-        {/* Cursor Coordinates Readout */}
+        {/* Live Cursor Coordinates Readout */}
         {cursorCoords && (
           <div className="bg-white/90 backdrop-blur-xs text-[#111111] px-2.5 py-1 border border-[#CCCCCC] shadow-xs text-[10px]">
             LAT: {cursorCoords.lat}° N · LON: {cursorCoords.lng}° E
@@ -359,7 +314,7 @@ export default function InvestigationMap({
       </div>
 
       {/* ══ Top-Right Map Controls & Basemap Switcher ═════════════════ */}
-      <div className="absolute top-3 right-3 z-[400] flex flex-col items-end gap-2 font-mono">
+      <div className="absolute top-3 right-3 z-30 flex flex-col items-end gap-2 font-mono">
         <div className="flex items-center gap-1.5">
           {/* Basemap Mode Switcher: SATELLITE | MAP */}
           <div className="flex bg-white border border-[#111111] shadow-md overflow-hidden text-[10px] font-bold">
@@ -518,7 +473,7 @@ export default function InvestigationMap({
             −
           </button>
           <button
-            onClick={fitInvestigation}
+            onClick={() => fitCameraToExtent(activeTab, 800)}
             className="w-8 h-8 flex items-center justify-center font-bold text-[10px] text-[#111111] hover:bg-[#F5F5F5] cursor-pointer"
             title="Fit Investigation Extent"
           >
@@ -528,16 +483,39 @@ export default function InvestigationMap({
       </div>
 
       {/* ══ Bottom-Left Contextual Legend HUD ════════════════════════ */}
-      <div className="absolute bottom-3 left-3 z-[400] pointer-events-none font-mono">
+      <div className="absolute bottom-3 left-3 z-30 pointer-events-none font-mono">
         <div className="bg-white/95 backdrop-blur-xs border border-[#111111] p-2.5 shadow-md max-w-sm">
           <div className="text-[9px] uppercase tracking-wider font-bold text-[#888888] mb-1.5 flex items-center justify-between">
             <span>
-              {activeTab === '02' ? 'SEGMENTATION CLASSIFICATION' : 'INVESTIGATION LEGEND'}
+              {activeTab === '01'
+                ? 'ARCHIVE & INTAKE CONTEXT'
+                : activeTab === '02'
+                ? 'SEGMENTATION CLASSIFICATION'
+                : activeTab === '03'
+                ? 'SLICK MORPHOLOGY AXES'
+                : activeTab === '04'
+                ? 'DRIFT & ORIGIN DYNAMICS'
+                : activeTab === '05'
+                ? 'AIS MARITIME TRAFFIC'
+                : activeTab === '06'
+                ? 'EVIDENCE FUSION & ATTRIBUTION'
+                : 'CONSOLIDATED INVESTIGATION'}
             </span>
             <span className="text-[8px] text-[#666666]">STAGE {activeTab}</span>
           </div>
 
-          {activeTab === '02' ? (
+          {activeTab === '01' ? (
+            /* Tab 01 Archive Legend */
+            <div className="space-y-1 text-[9px] text-[#333333]">
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-white border-2 border-[#111111]" />
+                <span>INCIDENT LOCATION</span>
+                <span className="text-gray-300">|</span>
+                <span className="w-4 h-0.5 border-b border-dashed border-[#111111]" />
+                <span>SAR SWATH EXTENT</span>
+              </div>
+            </div>
+          ) : activeTab === '02' ? (
             /* Tab 02 Semantic Classification Legend */
             <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[9px] text-[#111111]">
               <div className="flex items-center gap-1.5">
@@ -557,35 +535,129 @@ export default function InvestigationMap({
                 <span>LOW-WIND CALM</span>
               </div>
             </div>
-          ) : (
-            /* Standard Technical Investigation Legend */
+          ) : activeTab === '03' ? (
+            /* Tab 03 Slick Morphology Legend */
             <div className="space-y-1 text-[9px] text-[#333333]">
               <div className="flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-[#111111] border border-white" />
                 <span>OBSERVED SLICK</span>
                 <span className="text-gray-300">|</span>
-                <span className="w-2.5 h-2.5 rounded-full bg-white border-2 border-[#111111]" />
+                <span className="w-4 h-0.5 bg-[#111111]" />
+                <span>MAJOR AXIS</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="w-4 h-0.5 border-b border-dashed border-[#888888]" />
+                <span>MINOR AXIS</span>
+                <span className="text-gray-300">|</span>
+                <span className="w-2.5 h-2.5 rounded-full bg-[#111111] border-2 border-white" />
+                <span>CENTROID</span>
+              </div>
+            </div>
+          ) : activeTab === '04' ? (
+            /* Tab 04 Drift & Origin Legend */
+            <div className="space-y-1 text-[9px] text-[#333333]">
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-[#111111] border border-white" />
+                <span>OBSERVED SLICK</span>
+                <span className="text-gray-300">|</span>
+                <span className="w-2.5 h-2.5 rounded-full bg-[#22C55E] border-2 border-[#FFFFFF]" />
                 <span>RECONSTRUCTED ORIGIN</span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="w-4 h-0.5 bg-[#111111]" />
+                <span className="w-4 h-0.5 border-b border-dashed border-[#3B82F6]" />
+                <span>BACKWARD DRIFT</span>
+                <span className="text-gray-300">|</span>
+                <span className="text-[#9CA3AF] font-bold">↑</span>
+                <span>WIND</span>
+                <span className="text-gray-300">·</span>
+                <span className="text-[#60A5FA] font-bold">→</span>
+                <span>CURRENT</span>
+              </div>
+              {scenarioId === 'SYN-005' && (
+                <div className="flex items-center gap-2 text-[8px] text-[#2563EB]">
+                  <span className="w-4 h-0.5 border-b border-dotted border-[#2563EB]" />
+                  <span>50-MEMBER ENSEMBLE DISPERSION</span>
+                </div>
+              )}
+            </div>
+          ) : activeTab === '05' ? (
+            /* Tab 05 AIS Traffic Legend */
+            <div className="space-y-1 text-[9px] text-[#333333]">
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-[#111111] border border-white" />
+                <span>OBSERVED SLICK</span>
+                <span className="text-gray-300">|</span>
+                <span className="w-2.5 h-2.5 rounded-full bg-[#22C55E] border-2 border-[#FFFFFF]" />
+                <span>RECONSTRUCTED ORIGIN</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="w-4 h-0.5 bg-[#94A3B8]" />
+                <span>AIS VESSEL TRACK</span>
+                <span className="text-gray-300">|</span>
+                <span className="w-2 h-2 rounded-full bg-[#3B82F6]" />
+                <span>VESSEL CONTACT</span>
+              </div>
+              {scenarioId === 'SYN-003' && (
+                <div className="flex items-center gap-2 text-[8px] text-[#EF4444]">
+                  <span className="w-4 h-0.5 border-b border-dashed border-[#EF4444]" />
+                  <span>TRANSPONDER GAP (3.5h)</span>
+                </div>
+              )}
+            </div>
+          ) : activeTab === '06' ? (
+            /* Tab 06 Evidence Fusion Legend */
+            <div className="space-y-1 text-[9px] text-[#333333]">
+              <div className="flex items-center gap-2">
+                <span className="w-4 h-0.5 bg-[#FACC15]" />
                 <span>CANDIDATE TRACK</span>
                 <span className="text-gray-300">|</span>
-                <span className="w-4 h-0.5 border-b border-dashed border-[#111111]" />
+                <span className="w-4 h-0.5 border-b border-dashed border-[#EF4444]" />
+                <span>CPA TIE-LINE</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-[#22C55E] border-2 border-[#FFFFFF]" />
+                <span>ORIGIN</span>
+                <span className="text-gray-300">|</span>
+                <span className="w-4 h-0.5 border-b border-dashed border-[#3B82F6]" />
                 <span>BACKWARD DRIFT</span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-[#4B5563] font-bold">↑</span>
+                <span className="text-[#9CA3AF] font-bold">↑</span>
                 <span>WIND FORCING</span>
                 <span className="text-gray-300">|</span>
-                <span className="text-[#1F2937] font-bold">→</span>
+                <span className="text-[#60A5FA] font-bold">→</span>
+                <span>OCEAN CURRENT</span>
+              </div>
+            </div>
+          ) : (
+            /* Tab 07 Dossier Report Legend */
+            <div className="space-y-1 text-[9px] text-[#333333]">
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-[#111111] border border-white" />
+                <span>OBSERVED SLICK</span>
+                <span className="text-gray-300">|</span>
+                <span className="w-2.5 h-2.5 rounded-full bg-[#22C55E] border-2 border-[#FFFFFF]" />
+                <span>RECONSTRUCTED ORIGIN</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="w-4 h-0.5 bg-[#FACC15]" />
+                <span>CANDIDATE TRACK</span>
+                <span className="text-gray-300">|</span>
+                <span className="w-4 h-0.5 border-b border-dashed border-[#3B82F6]" />
+                <span>BACKWARD DRIFT</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[#9CA3AF] font-bold">↑</span>
+                <span>WIND FORCING</span>
+                <span className="text-gray-300">|</span>
+                <span className="text-[#60A5FA] font-bold">→</span>
                 <span>OCEAN CURRENT</span>
               </div>
             </div>
           )}
 
-          {scenarioId === 'SYN-004' && (
-            <div className="mt-2 pt-1.5 border-t border-[#EAEAEA] text-[8px] text-[#888888]">
+          {scenarioId === 'SYN-004' && activeTab >= '06' && (
+            <div className="mt-2 pt-1.5 border-t border-[#EAEAEA] text-[8px] text-[#DC2626] font-bold uppercase">
               ATTRIBUTION ABSTENTION: Zero candidate vessels fabricated.
             </div>
           )}
@@ -593,24 +665,9 @@ export default function InvestigationMap({
       </div>
 
       {/* ══ Bottom-Right Attribution HUD ═════════════════════════════ */}
-      <div className="absolute bottom-2 right-2 z-[400] pointer-events-none flex flex-col items-end gap-1 font-mono text-[9px] text-[#666666]">
+      <div className="absolute bottom-2 right-2 z-30 pointer-events-none flex flex-col items-end gap-1 font-mono text-[9px] text-[#666666]">
         <div className="bg-white/90 backdrop-blur-xs px-2.5 py-0.5 border border-[#CCCCCC] shadow-2xs">
-          {basemapMode === BASEMAP_MODES.SATELLITE ? (
-            <span>Tiles © Esri · WGS 84</span>
-          ) : (
-            <span>
-              ©{' '}
-              <a
-                href="https://www.openstreetmap.org/copyright"
-                target="_blank"
-                rel="noreferrer"
-                className="underline hover:text-[#111111] pointer-events-auto"
-              >
-                OpenStreetMap
-              </a>{' '}
-              contributors · WGS 84
-            </span>
-          )}
+          <span>Mapbox · OpenStreetMap contributors · WGS 84</span>
         </div>
       </div>
     </div>

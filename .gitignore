@@ -36,3 +36,6 @@ dist-ssr
 
 # Knowledge graph output (generated)
 graphify-out/
+
+# Test & scratch scripts (test only)
+scratch/

@@ -182,7 +182,7 @@ const scenario1 = {
       trajectoryCompatibility: 91,
       aisContinuity: 96,
       environmentalConsistency: 81,
-      overallScore: 87,
+      overallScore: 88,
       rankStability: 94,
       priority: PRIORITY.HIGH,
       reasons: [

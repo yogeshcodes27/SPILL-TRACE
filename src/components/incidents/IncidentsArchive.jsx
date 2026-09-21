@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from 'react';
-import MaritimeIncidentsMap from './MaritimeIncidentsMap';
+import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
+import IncidentMap from './IncidentMap';
 import SpilltraceLogo from '../common/SpilltraceLogo';
 import { INITIAL_INCIDENTS } from '../../data/incidentsData';
 import {
@@ -7,14 +7,17 @@ import {
   exportIncidentRecordGeoJson,
   getScenarioIdForIncident,
 } from '../../services/spilltraceService.js';
+import { SCENARIOS } from '../../services/scenariosData.js';
 
 export { INITIAL_INCIDENTS } from '../../data/incidentsData';
 
 /**
  * IncidentsArchive — "01 / INCIDENTS"
  * 
- * Case-management entry point for the SPILLTRACE platform.
- * Restrained editorial investigation archive based on authentic maritime intelligence logs.
+ * Dynamic case-entry point for the SPILLTRACE platform.
+ * Operational case archive where selecting ANY existing incident dynamically updates
+ * the map and all case-related UI.
+ * 
  * Answers: "Which spill are we investigating?"
  */
 
@@ -30,6 +33,28 @@ export default function IncidentsArchive({
   const [isTimelineExpanded, setIsTimelineExpanded] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [exportNotice, setExportNotice] = useState('');
+  const [selectedVesselMmsi, setSelectedVesselMmsi] = useState(null);
+
+  // Derive the linked scenario for the selected incident (null if no synthesized scenario)
+  const activeScenario = useMemo(() => {
+    const scenarioId = getScenarioIdForIncident(selectedIncident?.id);
+    return scenarioId ? SCENARIOS[scenarioId] : null;
+  }, [selectedIncident?.id]);
+
+  // Reset selected vessel when selected incident changes (No stale selection)
+  useEffect(() => {
+    setSelectedVesselMmsi(null);
+  }, [selectedIncident?.id]);
+
+  // Unified incident selection handler
+  const handleSelectIncident = useCallback((inc) => {
+    if (!inc) return;
+    setSelectedVesselMmsi(null);
+    onSelectIncident(inc);
+  }, [onSelectIncident]);
+
+  // Ref for scrolling table row into view
+  const tableContainerRef = useRef(null);
 
   // New incident form state
   const [newBasin, setNewBasin] = useState('Arabian Sea (Gujarat Shelf)');
@@ -52,6 +77,40 @@ export default function IncidentsArchive({
       return matchesStatus && matchesSearch;
     });
   }, [incidents, statusFilter, searchQuery]);
+
+  // Dynamic incident-specific activity events
+  const incidentEvents = useMemo(() => {
+    if (!selectedIncident) return [];
+
+    const events = (selectedIncident.timeline || []).map((step, idx) => ({
+      time: step.time,
+      title: step.title,
+      desc: step.desc,
+      id: `${selectedIncident.id} // STEP_${String(idx + 1).padStart(2, '0')}`,
+      isAnomaly: false,
+    }));
+
+    // If active scenario has an AIS transmission gap (e.g. SYN-003), ensure it is surfaced
+    if (activeScenario) {
+      const gapTrack = activeScenario.aisTraffic?.tracks?.find((t) => t.hasAisGap && t.aisGap);
+      if (gapTrack && gapTrack.aisGap) {
+        const alreadyHasGap = events.some(
+          (e) => e.title.toLowerCase().includes('gap') || e.desc.toLowerCase().includes('gap')
+        );
+        if (!alreadyHasGap) {
+          events.push({
+            time: '05:48 UTC',
+            title: 'AIS TRANSMISSION GAP DETECTED',
+            desc: `Vessel ${gapTrack.vesselName || gapTrack.mmsi} exhibited a ${gapTrack.aisGap.durationMinutes}min transponder outage during corridor transit`,
+            id: `${selectedIncident.id} // AIS_GAP_ANOMALY`,
+            isAnomaly: true,
+          });
+        }
+      }
+    }
+
+    return events;
+  }, [selectedIncident, activeScenario]);
 
   // Create incident handler
   const handleCreateIncident = (e) => {
@@ -94,7 +153,7 @@ export default function IncidentsArchive({
     };
 
     setIncidents([newInc, ...incidents]);
-    onSelectIncident(newInc);
+    handleSelectIncident(newInc);
     setIsCreateModalOpen(false);
   };
 
@@ -170,7 +229,7 @@ export default function IncidentsArchive({
               INCIDENTS
             </h2>
             <p className="font-mono text-xs sm:text-sm text-[#555555] mt-3 leading-relaxed font-light">
-              Maritime spill investigations, organized by event. Select an active incident to preserve context across Detection, Geometry, Drift, and Attribution.
+              Maritime spill investigations, organized by event. Select an active incident to inspect geographic context, observation footprint, and associated AIS contacts before entering the forensic workspace.
             </p>
             <div className="mt-4 flex flex-wrap items-center gap-2">
               <button
@@ -188,7 +247,7 @@ export default function IncidentsArchive({
             </div>
           </div>
 
-          {/* Telemetric Summary Status (From Reference Design) */}
+          {/* Telemetric Summary Status */}
           <div className="w-full lg:w-auto bg-[#FAFAFA] border border-[#E5E5E5] p-4 sm:p-5 font-mono text-xs self-stretch lg:self-auto min-w-[280px] sm:min-w-[340px]">
             <div className="text-[10px] text-[#888888] font-bold uppercase tracking-wider mb-2.5 pb-1.5 border-b border-[#EAEAEA]">
               TELEMETRIC SUMMARY STATUS
@@ -200,15 +259,15 @@ export default function IncidentsArchive({
               </div>
               <div className="flex justify-between">
                 <span className="text-[#666666]">UNDER INVESTIGATION:</span>
-                <span className="font-bold text-[#111111]">03</span>
+                <span className="font-bold text-[#111111]">05</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-[#666666]">RESOLVED / ARCHIVED:</span>
-                <span className="font-bold text-[#666666]">12</span>
+                <span className="font-bold text-[#666666]">07</span>
               </div>
               <div className="flex justify-between pt-1 border-t border-[#EAEAEA]">
                 <span className="text-[#666666]">TOTAL REGISTERED SPILLS:</span>
-                <span className="font-bold text-[#111111]">22</span>
+                <span className="font-bold text-[#111111]">{incidents.length}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-[#666666]">SURVEILLANCE COVERAGE:</span>
@@ -222,7 +281,7 @@ export default function IncidentsArchive({
         {exportNotice && (
           <div className="mb-6 p-3 bg-[#111111] text-white font-mono text-xs flex items-center justify-between transition-all">
             <span>✓ {exportNotice}</span>
-            <button onClick={() => setExportNotice('')} className="text-white/60 hover:text-white text-xs">✕</button>
+            <button onClick={() => setExportNotice('')} className="text-white/60 hover:text-white text-xs cursor-pointer">✕</button>
           </div>
         )}
 
@@ -236,20 +295,28 @@ export default function IncidentsArchive({
             <div className="flex items-center gap-2.5">
               <span className="w-2 h-2 rounded-full bg-[#111111] animate-ping" />
               <span className="font-bold uppercase tracking-wider text-[#111111]">
-                ACTIVE FORENSIC PRIORITY // {selectedIncident.id}
+                {activeScenario
+                  ? `ACTIVE FORENSIC PRIORITY // ${selectedIncident.id} [${activeScenario.id}]`
+                  : `ARCHIVE OBSERVATION RECORD // ${selectedIncident.id}`}
               </span>
               <span className="text-[#CCCCCC]">|</span>
               <span className="text-[#666666]">{selectedIncident.basin}</span>
             </div>
             <div className="flex items-center gap-3">
-              <span className="text-[10px] px-2 py-0.5 bg-[#111111] text-white font-bold tracking-widest uppercase">
-                {selectedIncident.currentStage}
-              </span>
+              {activeScenario ? (
+                <span className="text-[10px] px-2 py-0.5 bg-[#111111] text-white font-bold tracking-widest uppercase">
+                  INVESTIGATION AVAILABLE // {activeScenario.id}
+                </span>
+              ) : (
+                <span className="text-[10px] px-2 py-0.5 bg-[#F0F0F0] text-[#666666] border border-[#CCCCCC] font-bold tracking-widest uppercase">
+                  ARCHIVE OBSERVATION // NOT YET SYNTHESIZED
+                </span>
+              )}
               <span className="text-[#888888]">STATUS: {selectedIncident.status}</span>
             </div>
           </div>
 
-          {/* Dossier Content Grid: 3-Column Layout matching Reference Command Interface */}
+          {/* Dossier Content Grid: 3-Column Layout */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
             
             {/* 1. Left Column: SAR Backscatter Ingest Radar Display (4 cols on lg) */}
@@ -299,7 +366,7 @@ export default function IncidentsArchive({
                     SLICK DETECTED · {selectedIncident.sensor.split(' ')[0]}
                   </div>
                   <div className="absolute top-1.5 right-2 text-[9px] font-mono text-[#94A3B8]">
-                    PASS: DESC_5102
+                    {selectedIncident.code ? `OBS_${selectedIncident.code}` : 'PASS_5102'}
                   </div>
                 </div>
               </div>
@@ -375,56 +442,82 @@ export default function IncidentsArchive({
 
             {/* 3. Right Column: Workflow Stage Progression & Actions (4 cols on lg) */}
             <div className="lg:col-span-4 bg-[#FAFAFA] border border-[#E5E5E5] p-4 font-mono flex flex-col justify-between self-stretch">
-              <div>
-                <div className="flex justify-between items-center mb-3 pb-2 border-b border-[#EAEAEA] text-xs">
-                  <span className="font-bold text-[#111111] uppercase">INVESTIGATION PROGRESS</span>
-                  <span className="text-[#888888]">STAGE {selectedIncident.stageProgress} / 5</span>
-                </div>
+              {activeScenario ? (
+                <div>
+                  <div className="flex justify-between items-center mb-3 pb-2 border-b border-[#EAEAEA] text-xs">
+                    <span className="font-bold text-[#111111] uppercase">INVESTIGATION PROGRESS</span>
+                    <span className="text-[#888888]">STAGE {selectedIncident.stageProgress || 2} / 5</span>
+                  </div>
 
-                {/* Progress Steps List */}
-                <div className="space-y-1.5 text-[11px]">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[#111111] font-semibold">01 DETECTION [SAR EXTRACTED]</span>
-                    <span className="text-black font-bold">✓ COMPLETE</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-[#111111] font-semibold">02 CHARACTERISATION [GEOMETRY]</span>
-                    <span className="text-black font-bold">✓ COMPLETE</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-[#111111] font-semibold">03 DRIFT HINDCAST [ORIGIN]</span>
-                    <span className={selectedIncident.stageProgress >= 3 ? 'text-[#111111] font-bold' : 'text-[#888888]'}>
-                      {selectedIncident.stageProgress > 3 ? '✓ COMPLETE' : '● ACTIVE'}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className={selectedIncident.stageProgress >= 4 ? 'text-[#111111] font-semibold' : 'text-[#888888]'}>
-                      04 AIS CORRELATION [CANDIDATES]
-                    </span>
-                    <span className={selectedIncident.stageProgress >= 4 ? 'font-bold' : 'text-[#888888]'}>
-                      {selectedIncident.stageProgress > 4 ? '✓ COMPLETE' : selectedIncident.stageProgress === 4 ? '● ACTIVE' : 'QUEUED'}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className={selectedIncident.stageProgress >= 5 ? 'text-[#111111] font-semibold' : 'text-[#888888]'}>
-                      05 ATTRIBUTION [LEAD DOSSIER]
-                    </span>
-                    <span className={selectedIncident.stageProgress >= 5 ? 'font-bold' : 'text-[#888888]'}>
-                      {selectedIncident.stageProgress >= 5 ? '✓ COMPLETE' : 'PENDING'}
-                    </span>
+                  {/* Progress Steps List */}
+                  <div className="space-y-1.5 text-[11px]">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[#111111] font-semibold">01 DETECTION [SAR EXTRACTED]</span>
+                      <span className="text-black font-bold">✓ COMPLETE</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[#111111] font-semibold">02 CHARACTERISATION [GEOMETRY]</span>
+                      <span className="text-black font-bold">✓ COMPLETE</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[#111111] font-semibold">03 DRIFT HINDCAST [ORIGIN]</span>
+                      <span className={selectedIncident.stageProgress >= 3 ? 'text-[#111111] font-bold' : 'text-[#888888]'}>
+                        {selectedIncident.stageProgress > 3 ? '✓ COMPLETE' : '● ACTIVE'}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className={selectedIncident.stageProgress >= 4 ? 'text-[#111111] font-semibold' : 'text-[#888888]'}>
+                        04 AIS CORRELATION [CANDIDATES]
+                      </span>
+                      <span className={selectedIncident.stageProgress >= 4 ? 'font-bold' : 'text-[#888888]'}>
+                        {selectedIncident.stageProgress > 4 ? '✓ COMPLETE' : selectedIncident.stageProgress === 4 ? '● ACTIVE' : 'QUEUED'}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className={selectedIncident.stageProgress >= 5 ? 'text-[#111111] font-semibold' : 'text-[#888888]'}>
+                        05 ATTRIBUTION [LEAD DOSSIER]
+                      </span>
+                      <span className={selectedIncident.stageProgress >= 5 ? 'font-bold' : 'text-[#888888]'}>
+                        {selectedIncident.stageProgress >= 5 ? '✓ COMPLETE' : 'PENDING'}
+                      </span>
+                    </div>
                   </div>
                 </div>
-              </div>
+              ) : (
+                <div>
+                  <div className="flex justify-between items-center mb-3 pb-2 border-b border-[#EAEAEA] text-xs">
+                    <span className="font-bold text-[#111111] uppercase">ARCHIVE DOSSIER STATUS</span>
+                    <span className="text-[#888888]">CATALOG RECORD</span>
+                  </div>
+                  <div className="p-3 bg-white border border-[#E5E5E5] space-y-2 text-[11px] text-[#555555]">
+                    <div className="font-bold text-[#111111] uppercase text-[10px]">
+                      HISTORICAL / OBSERVATIONAL RECORD
+                    </div>
+                    <p className="leading-relaxed">
+                      Satellite SAR observation logged in maritime registry. Hydrocarbon signature cataloged with calibrated surface area ({selectedIncident.area}).
+                    </p>
+                    <div className="pt-2 border-t border-[#F0F0F0] text-[10px] text-[#888888] uppercase">
+                      INVESTIGATION SCENARIO NOT YET SYNTHESIZED
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* CTA Buttons to open operational environment */}
               <div className="mt-4 pt-3 border-t border-[#EAEAEA] space-y-2">
-                <button
-                  onClick={() => onOpenConsole && onOpenConsole(1, selectedIncident)}
-                  className="w-full py-2 bg-[#111111] text-white hover:bg-black transition-all font-mono text-xs font-bold uppercase tracking-wider cursor-pointer flex items-center justify-center gap-2 shadow-sm"
-                >
-                  <span>RESUME FORENSIC INVESTIGATION</span>
-                  <span>→</span>
-                </button>
+                {activeScenario ? (
+                  <button
+                    onClick={() => onOpenConsole && onOpenConsole(1, selectedIncident)}
+                    className="w-full py-2 bg-[#111111] text-white hover:bg-black transition-all font-mono text-xs font-bold uppercase tracking-wider cursor-pointer flex items-center justify-center gap-2 shadow-sm"
+                  >
+                    <span>OPEN INVESTIGATION // {activeScenario.id}</span>
+                    <span>→</span>
+                  </button>
+                ) : (
+                  <div className="w-full py-2 bg-[#F5F5F5] text-[#888888] border border-[#E5E5E5] font-mono text-xs font-bold uppercase tracking-wider text-center select-none">
+                    ARCHIVE RECORD ONLY — NO ACTIVE SCENARIO
+                  </div>
+                )}
                 <div className="flex gap-2">
                   <button
                     onClick={() => setIsTimelineExpanded(!isTimelineExpanded)}
@@ -432,14 +525,16 @@ export default function IncidentsArchive({
                   >
                     {isTimelineExpanded ? 'HIDE SEQUENCE ▲' : 'CHRONOLOGY ▼'}
                   </button>
-                  <button
-                    onClick={() => onNavigateToPipeline ? onNavigateToPipeline('detect') : (window.location.hash = '#detect')}
-                    className="py-1.5 px-3 bg-white border border-[#CCCCCC] hover:border-[#111111] text-[#333333] hover:text-[#111111] transition-all font-mono text-[11px] font-medium uppercase tracking-wider cursor-pointer text-center flex items-center justify-center gap-1.5"
-                    title="Switch to Detection pipeline on landing page"
-                  >
-                    <span>PIPELINE</span>
-                    <span className="font-bold">→</span>
-                  </button>
+                  {onNavigateToPipeline && (
+                    <button
+                      onClick={() => onNavigateToPipeline('detect')}
+                      className="py-1.5 px-3 bg-white border border-[#CCCCCC] hover:border-[#111111] text-[#333333] hover:text-[#111111] transition-all font-mono text-[11px] font-medium uppercase tracking-wider cursor-pointer text-center flex items-center justify-center gap-1.5"
+                      title="Switch to Detection pipeline on landing page"
+                    >
+                      <span>PIPELINE</span>
+                      <span className="font-bold">→</span>
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -454,11 +549,22 @@ export default function IncidentsArchive({
                 CHRONOLOGICAL AUDIT TRAIL // UTC SEQUENCE FOR {selectedIncident.id}
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-                {selectedIncident.timeline.map((step, idx) => (
-                  <div key={idx} className="p-2.5 bg-[#FAFAFA] border border-[#E5E5E5]">
-                    <div className="text-[10px] font-bold text-[#111111]">{step.time}</div>
-                    <div className="text-[10px] text-[#555555] font-semibold mt-0.5 uppercase">{step.title}</div>
-                    <div className="text-[9px] text-[#888888] mt-1 leading-snug">{step.desc}</div>
+                {incidentEvents.map((step, idx) => (
+                  <div
+                    key={idx}
+                    className={`p-2.5 border ${
+                      step.isAnomaly ? 'bg-[#FEF2F2] border-[#FCA5A5]' : 'bg-[#FAFAFA] border-[#E5E5E5]'
+                    }`}
+                  >
+                    <div className={`text-[10px] font-bold ${step.isAnomaly ? 'text-[#DC2626]' : 'text-[#111111]'}`}>
+                      {step.time}
+                    </div>
+                    <div className="text-[10px] text-[#555555] font-semibold mt-0.5 uppercase">
+                      {step.title}
+                    </div>
+                    <div className="text-[9px] text-[#888888] mt-1 leading-snug">
+                      {step.desc}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -468,14 +574,16 @@ export default function IncidentsArchive({
         </div>
 
         {/* ================================================================== */}
-        {/* GEOSPATIAL SITUATION DISPOSITION (NAUTICAL TACTICAL MAP) */}
+        {/* GEOSPATIAL INCIDENT BROWSER (MAPBOX GL JS) */}
         {/* ================================================================== */}
-        <MaritimeIncidentsMap
+        <IncidentMap
           incidents={incidents}
-          selectedIncident={selectedIncident}
-          onSelectIncident={onSelectIncident}
-          statusFilter={statusFilter}
-          onStatusFilterChange={setStatusFilter}
+          selectedIncidentId={selectedIncident?.id}
+          scenario={activeScenario}
+          onSelectIncident={handleSelectIncident}
+          selectedVesselMmsi={selectedVesselMmsi}
+          onSelectVessel={setSelectedVesselMmsi}
+          getScenarioId={getScenarioIdForIncident}
         />
 
         {/* ================================================================== */}
@@ -515,7 +623,7 @@ export default function IncidentsArchive({
               {searchQuery && (
                 <button
                   onClick={() => setSearchQuery('')}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-[#888888] hover:text-[#111111] text-xs"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-[#888888] hover:text-[#111111] text-xs cursor-pointer"
                 >
                   ✕
                 </button>
@@ -548,11 +656,13 @@ export default function IncidentsArchive({
                   </tr>
                 ) : (
                   filteredIncidents.map((inc) => {
-                    const isSelected = selectedIncident.id === inc.id;
+                    const isSelected = selectedIncident?.id === inc.id;
+                    const scenarioId = getScenarioIdForIncident(inc.id);
+
                     return (
                       <tr
                         key={inc.id}
-                        onClick={() => onSelectIncident(inc)}
+                        onClick={() => handleSelectIncident(inc)}
                         className={`transition-colors cursor-pointer ${
                           isSelected
                             ? 'bg-[#F5F5F5] font-semibold text-[#111111]'
@@ -603,22 +713,39 @@ export default function IncidentsArchive({
 
                         {/* Action */}
                         <td className="py-3 px-4 text-right whitespace-nowrap">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onSelectIncident(inc);
-                              if (onOpenConsole) onOpenConsole(1, inc);
-                            }}
-                            className={`px-2.5 py-1 text-[10px] font-bold uppercase cursor-pointer transition-all ${
-                              isSelected
-                                ? 'bg-[#111111] hover:bg-black text-white shadow-xs'
-                                : 'border border-[#CCCCCC] hover:border-[#111111] text-[#111111] hover:bg-white'
-                            }`}
-                            title={`Open case ${inc.id} in Investigation Workspace`}
-                          >
-                            <span>OPEN CASE</span>
-                            <span className="ml-1">→</span>
-                          </button>
+                          {scenarioId ? (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleSelectIncident(inc);
+                                if (onOpenConsole) onOpenConsole(1, inc);
+                              }}
+                              className={`px-2.5 py-1 text-[10px] font-bold uppercase cursor-pointer transition-all ${
+                                isSelected
+                                  ? 'bg-[#111111] hover:bg-black text-white shadow-xs'
+                                  : 'border border-[#CCCCCC] hover:border-[#111111] text-[#111111] hover:bg-white'
+                              }`}
+                              title={`Open investigation for ${inc.id} (${scenarioId})`}
+                            >
+                              <span>INVESTIGATE {scenarioId}</span>
+                              <span className="ml-1">→</span>
+                            </button>
+                          ) : (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleSelectIncident(inc);
+                              }}
+                              className={`px-2.5 py-1 text-[10px] font-bold uppercase cursor-pointer transition-all ${
+                                isSelected
+                                  ? 'bg-[#E5E5E5] text-[#111111]'
+                                  : 'border border-[#E0E0E0] text-[#777777] hover:border-[#999999] hover:text-[#111111]'
+                              }`}
+                              title={`Inspect archive record ${inc.id}`}
+                            >
+                              <span>INSPECT</span>
+                            </button>
+                          )}
                         </td>
                       </tr>
                     );
@@ -640,39 +767,142 @@ export default function IncidentsArchive({
         </div>
 
         {/* ================================================================== */}
-        {/* LIVE SYSTEM AUDIT & ACTIVITY LOG */}
+        {/* AIS / VESSEL CONTACTS TABLE (Scenario-Aware) */}
+        {/* ================================================================== */}
+        {activeScenario?.aisTraffic?.tracks?.length > 0 ? (
+          <div className="mt-8 border border-[#E5E5E5] bg-white shadow-2xs" ref={tableContainerRef}>
+            <div className="bg-[#FAFAFA] border-b border-[#E5E5E5] px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 font-mono text-[11px]">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 bg-[#111111] inline-block flex-shrink-0" />
+                <span className="font-bold text-[#111111] uppercase tracking-wider">AIS / VESSEL CONTACTS</span>
+                <span className="text-[#CCCCCC]">|</span>
+                <span className="text-[#888888]">{selectedIncident.id}</span>
+                {selectedVesselMmsi && (
+                  <span className="ml-2 px-1.5 py-0.5 bg-[#FEF3C7] text-[#92400E] border border-[#FDE68A] text-[10px] font-bold">
+                    SELECTED MMSI: {selectedVesselMmsi}
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-3 text-[10px] text-[#666666]">
+                <span>{activeScenario.aisTraffic.summary.vesselsInRegion} VESSELS IN REGION</span>
+                {selectedVesselMmsi && (
+                  <button
+                    onClick={() => setSelectedVesselMmsi(null)}
+                    className="underline text-[#111111] hover:text-black cursor-pointer font-bold"
+                  >
+                    RESET SELECTION
+                  </button>
+                )}
+              </div>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left font-mono text-xs border-collapse">
+                <thead>
+                  <tr className="bg-[#FAFAFA] border-b border-[#E5E5E5] text-[10px] text-[#888888] uppercase tracking-wider">
+                    <th className="py-2.5 px-4 font-semibold">MMSI</th>
+                    <th className="py-2.5 px-4 font-semibold">VESSEL</th>
+                    <th className="py-2.5 px-4 font-semibold hidden md:table-cell">TYPE</th>
+                    <th className="py-2.5 px-4 font-semibold hidden lg:table-cell">FLAG</th>
+                    <th className="py-2.5 px-4 font-semibold hidden sm:table-cell">LENGTH</th>
+                    <th className="py-2.5 px-4 font-semibold">AIS GAP</th>
+                    <th className="py-2.5 px-4 font-semibold">SPEED / COURSE</th>
+                    <th className="py-2.5 px-4 font-semibold text-right">ACTION</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#EAEAEA]">
+                  {activeScenario.aisTraffic.tracks.map((track) => {
+                    const isSelected = selectedVesselMmsi === track.mmsi;
+                    const lastPos = track.positions?.[track.positions.length - 1];
+                    const sog = Math.round((lastPos?.sog || track.avgSpeedKn || 0) * 10) / 10;
+                    const cog = Math.round(lastPos?.cog || 0);
+
+                    return (
+                      <tr
+                        key={track.mmsi}
+                        onClick={() => setSelectedVesselMmsi(isSelected ? null : track.mmsi)}
+                        className={`transition-colors cursor-pointer ${
+                          isSelected
+                            ? 'bg-[#FEF9C3] font-semibold text-[#111111]'
+                            : 'hover:bg-[#FAFAFA] text-[#444444]'
+                        }`}
+                      >
+                        <td className="py-2.5 px-4 whitespace-nowrap font-mono text-[11px]">
+                          <span className={isSelected ? 'font-bold text-[#854D0E]' : ''}>
+                            {track.mmsi}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-4">
+                          <div className="font-semibold text-[#111111] text-[11px]">{track.vesselName}</div>
+                        </td>
+                        <td className="py-2.5 px-4 text-[11px] text-[#666666] hidden md:table-cell">{track.vesselType}</td>
+                        <td className="py-2.5 px-4 text-[11px] hidden lg:table-cell">{track.flag}</td>
+                        <td className="py-2.5 px-4 text-[11px] hidden sm:table-cell">{track.lengthM}m</td>
+                        <td className="py-2.5 px-4 text-[11px]">
+                          {track.hasAisGap ? (
+                            <span className="text-[#EF4444] font-bold">{track.aisGap?.durationMinutes}min GAP</span>
+                          ) : (
+                            <span className="text-[#888888]">—</span>
+                          )}
+                        </td>
+                        <td className="py-2.5 px-4 text-[11px] font-mono">
+                          {sog} kn · {cog}°
+                        </td>
+                        <td className="py-2.5 px-4 text-right">
+                          <span className={`text-[10px] uppercase font-bold px-2 py-0.5 ${
+                            isSelected
+                              ? 'bg-[#111111] text-white'
+                              : 'border border-[#CCCCCC] text-[#666666]'
+                          }`}>
+                            {isSelected ? 'HIGHLIGHTED' : 'INSPECT'}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : (
+          <div className="mt-8 border border-[#E5E5E5] bg-[#FAFAFA] p-5 font-mono text-xs shadow-2xs">
+            <div className="flex items-center gap-2 text-[11px] font-bold uppercase text-[#888888] mb-1">
+              <span className="w-2 h-2 bg-[#CCCCCC] inline-block" />
+              <span>AIS TRAFFIC ARCHIVE // {selectedIncident.id}</span>
+            </div>
+            <div className="text-[#666666] text-[11px] leading-relaxed">
+              No synthesized AIS vessel contacts are correlated for archive record <span className="font-bold text-[#111111]">{selectedIncident.id}</span>.
+              Synthesized kinematic vessel tracking and transponder logs are available for active investigation cases <span className="font-bold text-[#111111]">INC-2026-001 through INC-2026-005</span>.
+            </div>
+          </div>
+        )}
+
+        {/* ================================================================== */}
+        {/* LIVE SYSTEM AUDIT & ACTIVITY LOG (Incident-Specific) */}
         {/* ================================================================== */}
         <div className="mt-8 border border-[#E5E5E5] bg-white p-4 font-mono text-xs shadow-2xs">
           <div className="flex flex-wrap items-center justify-between pb-2 mb-3 border-b border-[#EAEAEA] text-[11px]">
             <div>
               <span className="font-bold text-[#111111] uppercase">LIVE SYSTEM AUDIT &amp; ACTIVITY LOG</span>
-              <span className="text-[#888888] block sm:inline sm:ml-2">Continuous verification pipeline ledger</span>
+              <span className="text-[#888888] block sm:inline sm:ml-2">
+                Operational event sequence for {selectedIncident.id}
+                {activeScenario ? ` (${activeScenario.id})` : ' (Archive Only)'}
+              </span>
             </div>
             <div className="text-[10px] text-[#555555]">
               FEED: <span className="font-bold text-[#111111]">LIVE_SOCKET // STAC-API v1.0</span>
             </div>
           </div>
           <div className="space-y-1.5 text-[11px] text-[#444444]">
-            <div className="flex items-start justify-between gap-4">
-              <span>■ 09:06 UTC AIS correlation candidate set filtered (428 → 3 candidate vessels within spatial window)</span>
-              <span className="text-[#888888] whitespace-nowrap">INCIDENT 001 // SEC_B4</span>
-            </div>
-            <div className="flex items-start justify-between gap-4">
-              <span>■ 07:19 UTC Lagrangian advection model simulation initialized (CMEMS hydrodynamics + GFS 10m wind fields)</span>
-              <span className="text-[#888888] whitespace-nowrap">INCIDENT 001 // FORCING_OK</span>
-            </div>
-            <div className="flex items-start justify-between gap-4">
-              <span>■ 07:03 UTC Slick polygon boundary vectorized into GeoJSON feature (Area: 18.42 km², Perimeter: 21.8 km)</span>
-              <span className="text-[#888888] whitespace-nowrap">INCIDENT 001 // GEOM_EXTRACT</span>
-            </div>
-            <div className="flex items-start justify-between gap-4">
-              <span>■ 06:51 UTC Feature segmentation threshold confirmed at 96.4% confidence (Mineral oil vs biogenic slick)</span>
-              <span className="text-[#888888] whitespace-nowrap">INCIDENT 001 // ML_UNET_V3</span>
-            </div>
-            <div className="flex items-start justify-between gap-4">
-              <span>■ 06:42 UTC Satellite SAR observation ingested from Copernicus SciHub via automated webhook</span>
-              <span className="text-[#888888] whitespace-nowrap">INCIDENT 001 // SENTINEL-1A</span>
-            </div>
+            {incidentEvents.map((step, idx) => (
+              <div key={step.id || idx} className="flex items-start justify-between gap-4">
+                <span className={step.isAnomaly ? 'text-[#DC2626] font-semibold' : ''}>
+                  ■ {step.time} {step.title} — {step.desc}
+                </span>
+                <span className="text-[#888888] whitespace-nowrap font-mono text-[10px]">
+                  {step.id}
+                </span>
+              </div>
+            ))}
           </div>
         </div>
 

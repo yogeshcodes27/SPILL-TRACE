@@ -28,7 +28,7 @@ function resolveRouteIds(rawParam1, rawParam2) {
 
   if (p1.startsWith('INC-')) {
     const incidentId = p1;
-    const scenarioId = p2 || INCIDENT_TO_SCENARIO_MAP[incidentId] || 'SYN-001';
+    const scenarioId = p2 || INCIDENT_TO_SCENARIO_MAP[incidentId] || null;
     return { incidentId, scenarioId };
   }
 
@@ -112,11 +112,13 @@ export default function App() {
       setPreviousView(activeTab === 'investigation' ? 'incidents' : activeTab);
 
       const targetScenario = scenarioId || getScenarioIdForIncident(inc.id);
+      if (!targetScenario) {
+        console.warn(`[SPILLTRACE] Incident ${inc.id} has no synthesized scenario.`);
+        return;
+      }
       setRouteScenarioId(targetScenario);
 
-      const targetPath = targetScenario
-        ? `/investigation/${inc.id}/${targetScenario}`
-        : `/investigation/${inc.id}`;
+      const targetPath = `/investigation/${inc.id}/${targetScenario}`;
 
       try {
         window.history.pushState(
