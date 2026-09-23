@@ -234,6 +234,7 @@ export default function App() {
         selectedIncident={selectedIncident}
         onSelectIncident={setSelectedIncident}
         initialScenarioId={routeScenarioId}
+        onSwitchScenario={setRouteScenarioId}
         consoleTab={consoleTab}
         setConsoleTab={setConsoleTab}
         onClose={handleCloseInvestigation}

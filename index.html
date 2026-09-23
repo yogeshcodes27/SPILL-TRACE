@@ -56,6 +56,28 @@
     .leaflet-tooltip-right:before {
       display: none !important;
     }
+
+    /* Professional light-theme Mapbox popups */
+    .mapboxgl-popup-content {
+      background: #FFFFFF !important;
+      border: 1px solid #CCCCCC !important;
+      border-radius: 0 !important;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15) !important;
+      color: #111111 !important;
+      font-family: 'JetBrains Mono', monospace !important;
+      font-size: 10px !important;
+      padding: 4px 8px !important;
+    }
+    .mapboxgl-popup-tip {
+      border-top-color: #FFFFFF !important;
+      border-bottom-color: #FFFFFF !important;
+    }
+
+    /* Pulse animation for selected maritime features */
+    @keyframes spilltrace-pulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(255, 213, 79, 0.4); }
+      50% { box-shadow: 0 0 0 8px rgba(255, 213, 79, 0); }
+    }
   </style>
 </head>
 <body class="bg-white text-[#111111] font-sans antialiased">

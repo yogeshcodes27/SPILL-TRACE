@@ -6,6 +6,7 @@
  * All data is explicitly labelled as synthetic/demo.
  */
 import { DATA_STATUS, CLASSIFICATION, PRIORITY, DISCLAIMER } from './types.js';
+import { makeRealisticSlickPolygon } from './map/mapGeometry.js';
 
 // ─── Helper: Generate polygon ring around a centroid ────────────────
 function makePolygon(centerLon, centerLat, majorKm, minorKm, orientDeg, points = 24) {
@@ -40,8 +41,8 @@ function generateTrackPositions(startLat, startLon, heading, speedKn, startTime,
     positions.push({
       lat: Math.round(lat * 1000) / 1000,
       lon: Math.round(lon * 1000) / 1000,
-      sog: isGap ? 0 : speedKn + (Math.sin(i * 0.7) * 0.5),
-      cog: heading + (Math.sin(i * 0.3) * 2),
+      sog: isGap ? 0 : Math.round((speedKn + (Math.sin(i * 0.7) * 0.4)) * 10) / 10,
+      cog: Math.round((heading + (Math.sin(i * 0.3) * 1.5) + 360) % 360),
       timestamp: t.toISOString(),
       isGap,
     });
@@ -81,7 +82,7 @@ const scenario1 = {
 
   spill: {
     spillId: 'SPL-SYN001-A',
-    polygon: makePolygon(80.184, 11.238, 6.42, 1.8, 298.4),
+    polygon: makeRealisticSlickPolygon(80.184, 11.238, 6.42, 1.8, 298.4, 'SYN001-SLICK'),
     areaKm2: 12.6,
     perimeterKm: 18.4,
     centroid: [80.184, 11.238],
@@ -142,8 +143,15 @@ const scenario1 = {
         vesselName: 'PACIFIC HORIZON',
         vesselType: 'CARGO VESSEL',
         flag: 'SG',
+        callsign: '9V8102',
+        imo: '9748211',
         lengthM: 189,
         beamM: 28,
+        draughtM: 11.8,
+        grossTonnage: 32400,
+        destination: 'CHITTAGONG',
+        navStatus: 'Under way using engine',
+        aisClass: 'Class A',
         positions: generateTrackPositions(11.02, 80.01, 38, 12.4, '2026-06-17T18:00:00Z', 24),
         hasAisGap: false,
         aisGap: null,
@@ -153,9 +161,16 @@ const scenario1 = {
         vesselName: 'EASTERN SPIRIT',
         vesselType: 'BULK CARRIER',
         flag: 'PA',
+        callsign: '3E2911',
+        imo: '9651044',
         lengthM: 225,
         beamM: 32,
-        positions: generateTrackPositions(11.45, 80.28, 215, 9.2, '2026-06-17T16:00:00Z', 28),
+        draughtM: 14.2,
+        grossTonnage: 43500,
+        destination: 'COLOMBO',
+        navStatus: 'Under way using engine',
+        aisClass: 'Class A',
+        positions: generateTrackPositions(11.65, 80.35, 175, 9.2, '2026-06-17T16:00:00Z', 20),
         hasAisGap: false,
         aisGap: null,
       },
@@ -164,9 +179,16 @@ const scenario1 = {
         vesselName: 'CORAL TIDE',
         vesselType: 'PRODUCT TANKER',
         flag: 'LR',
+        callsign: 'A8QK3',
+        imo: '9583920',
         lengthM: 175,
         beamM: 26,
-        positions: generateTrackPositions(11.15, 80.35, 300, 8.5, '2026-06-18T01:00:00Z', 20),
+        draughtM: 9.6,
+        grossTonnage: 28100,
+        destination: 'PARADIP',
+        navStatus: 'Under way using engine',
+        aisClass: 'Class A',
+        positions: generateTrackPositions(11.00, 80.40, 18, 8.5, '2026-06-18T01:00:00Z', 20),
         hasAisGap: false,
         aisGap: null,
       },
@@ -283,7 +305,7 @@ const scenario2 = {
 
   spill: {
     spillId: 'SPL-SYN002-A',
-    polygon: makePolygon(70.114, 18.421, 3.1, 1.4, 142.1),
+    polygon: makeRealisticSlickPolygon(70.114, 18.421, 3.1, 1.4, 142.1, 'SYN002-SLICK'),
     areaKm2: 4.2,
     perimeterKm: 10.8,
     centroid: [70.114, 18.421],
@@ -538,7 +560,7 @@ const scenario3 = {
 
   spill: {
     spillId: 'SPL-SYN003-A',
-    polygon: makePolygon(57.852, 24.305, 8.9, 2.4, 312.0),
+    polygon: makeRealisticSlickPolygon(57.852, 24.305, 8.9, 2.4, 312.0, 'SYN003-SLICK'),
     areaKm2: 7.31,
     perimeterKm: 22.6,
     centroid: [57.852, 24.305],
@@ -626,9 +648,16 @@ const scenario3 = {
         vesselName: 'HORMUZ TRADER',
         vesselType: 'CHEMICAL TANKER',
         flag: 'AE',
+        callsign: 'A6E244',
+        imo: '9684128',
         lengthM: 160,
         beamM: 24,
-        positions: generateTrackPositions(24.25, 57.90, 290, 9.4, '2026-06-08T14:00:00Z', 20),
+        draughtM: 8.8,
+        grossTonnage: 19800,
+        destination: 'SOHAR',
+        navStatus: 'Under way using engine',
+        aisClass: 'Class A',
+        positions: generateTrackPositions(24.10, 58.00, 315, 9.4, '2026-06-08T14:00:00Z', 20),
         hasAisGap: false,
         aisGap: null,
       },
@@ -745,7 +774,7 @@ const scenario4 = {
 
   spill: {
     spillId: 'SPL-SYN004-A',
-    polygon: makePolygon(100.220, 3.150, 2.4, 1.1, 118.5),
+    polygon: makeRealisticSlickPolygon(100.220, 3.150, 2.4, 1.1, 118.5, 'SYN004-SLICK'),
     areaKm2: 1.88,
     perimeterKm: 7.2,
     centroid: [100.220, 3.150],
@@ -920,7 +949,7 @@ const scenario5 = {
 
   spill: {
     spillId: 'SPL-SYN005-A',
-    polygon: makePolygon(75.121, 9.582, 4.5, 2.1, 270.0),
+    polygon: makeRealisticSlickPolygon(75.121, 9.582, 4.5, 2.1, 270.0, 'SYN005-SLICK'),
     areaKm2: 3.45,
     perimeterKm: 13.2,
     centroid: [75.121, 9.582],

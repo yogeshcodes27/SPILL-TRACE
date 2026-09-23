@@ -51,6 +51,19 @@ export function haversineDistanceNm(lat1, lon1, lat2, lon2) {
   return R * c;
 }
 
+// True geographic initial bearing between two [lon, lat] coordinates (0° to 359° North)
+export function calculateBearingDeg(p1, p2) {
+  if (!p1 || !p2) return 0;
+  const lon1 = (p1[0] * Math.PI) / 180;
+  const lat1 = (p1[1] * Math.PI) / 180;
+  const lon2 = (p2[0] * Math.PI) / 180;
+  const lat2 = (p2[1] * Math.PI) / 180;
+  const y = Math.sin(lon2 - lon1) * Math.cos(lat2);
+  const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(lon2 - lon1);
+  const b = (Math.atan2(y, x) * 180) / Math.PI;
+  return (Math.round(b) + 360) % 360;
+}
+
 // Project a geographic coordinate along a bearing (degrees) and distance (km)
 export const projectPoint = (centerLat, centerLon, distanceKm, bearingDeg) => {
   if (centerLat == null || centerLon == null || distanceKm == null || bearingDeg == null) {
@@ -83,6 +96,58 @@ export function calculateSlickAxes(centroid, majorAxisKm, minorAxisKm, orientati
     major: [majorStart, majorEnd],
     minor: [minorStart, minorEnd],
   };
+}
+
+// ─── Irregular Natural Marine Oil Slick Geometry Generator ──────────
+export function makeRealisticSlickPolygon(
+  centerLon,
+  centerLat,
+  majorKm,
+  minorKm,
+  orientDeg,
+  seedStr = 'SLICK-001',
+  points = 48
+) {
+  const prng = createPrng(seedStr);
+  const ring = [];
+  const orientRad = (orientDeg * Math.PI) / 180;
+  const latKm = 110.574;
+  const lonKm = 111.32 * Math.cos((centerLat * Math.PI) / 180);
+
+  // Pre-generate harmonic perturbation phases
+  const p1 = prng() * Math.PI * 2;
+  const p2 = prng() * Math.PI * 2;
+  const p3 = prng() * Math.PI * 2;
+
+  for (let i = 0; i <= points; i++) {
+    const angle = (2 * Math.PI * (i % points)) / points;
+
+    // Asymmetric elongation: heavier emulsion head and tapering sheen tail
+    const asymmetry = 1.0 + 0.22 * Math.cos(angle);
+
+    // Multi-frequency wave turbulence and capillary boundary harmonics
+    const waveNoise =
+      1.0 +
+      0.08 * Math.sin(3 * angle + p1) +
+      0.05 * Math.cos(5 * angle + p2) +
+      0.03 * Math.sin(8 * angle + p3);
+
+    const rMajor = (majorKm / 2) * asymmetry * waveNoise;
+    const rMinor = (minorKm / 2) * (1.0 + 0.12 * Math.sin(2 * angle + p2)) * waveNoise;
+
+    const dx = rMajor * Math.cos(angle);
+    const dy = rMinor * Math.sin(angle);
+
+    // Rotate by orientRad
+    const rotX = dx * Math.cos(orientRad) - dy * Math.sin(orientRad);
+    const rotY = dx * Math.sin(orientRad) + dy * Math.cos(orientRad);
+
+    ring.push([
+      Math.round((centerLon + rotX / lonKm) * 100000) / 100000,
+      Math.round((centerLat + rotY / latKm) * 100000) / 100000,
+    ]);
+  }
+  return ring;
 }
 
 // ─── Generate Smooth Uncertainty Ellipse ────────────────────────────

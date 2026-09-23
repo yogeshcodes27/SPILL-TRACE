@@ -7,7 +7,9 @@
     "dev": "vite --host --port 5173",
     "start": "vite --host --port 5173",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "node scratch/run_requirements_verification.mjs",
+    "test:all": "node scratch/run_requirements_verification.mjs && node scratch/test_map_stage_sources.mjs && node scratch/test_incident_page_data_flow.mjs && node scratch/test_pipeline_propagation.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",

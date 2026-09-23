@@ -1,0 +1,1772 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SPILLTRACE — Hyperrealistic VLCC Crude Oil Tanker 3D Model</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background-color: #0b1118;
+      color: #e2e8f0;
+      overflow: hidden;
+      width: 100vw;
+      height: 100vh;
+    }
+
+    #canvas-container {
+      width: 100%;
+      height: 100%;
+      position: absolute;
+      top: 0;
+      left: 0;
+      z-index: 1;
+    }
+
+    /* Checkerboard for transparent mode */
+    .bg-transparent {
+      background-color: #0a0e14;
+      background-image: 
+        linear-gradient(45deg, #0e141c 25%, transparent 25%), 
+        linear-gradient(-45deg, #0e141c 25%, transparent 25%), 
+        linear-gradient(45deg, transparent 75%, #0e141c 75%), 
+        linear-gradient(-45deg, transparent 75%, #0e141c 75%);
+      background-size: 24px 24px;
+      background-position: 0 0, 0 12px, 12px -12px, -12px 0px;
+    }
+
+    .bg-dark { background: #070a0e; }
+    .bg-ocean { background: radial-gradient(circle at center, #102136 0%, #05090f 100%); }
+    .bg-studio { background: radial-gradient(circle at center, #1e293b 0%, #090e15 100%); }
+
+    /* Top HUD Header */
+    .hud-header {
+      position: absolute;
+      top: 20px;
+      left: 24px;
+      z-index: 10;
+      pointer-events: none;
+    }
+
+    .hud-title {
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .hud-badge {
+      font-size: 10px;
+      font-family: monospace;
+      padding: 3px 8px;
+      background: rgba(14, 165, 233, 0.15);
+      border: 1px solid #0ea5e9;
+      color: #38bdf8;
+      border-radius: 2px;
+      text-transform: uppercase;
+    }
+
+    .hud-sub {
+      font-size: 11px;
+      font-family: monospace;
+      color: #94a3b8;
+      margin-top: 4px;
+    }
+
+    /* Floating Control Panel */
+    .panel {
+      position: absolute;
+      background: rgba(15, 23, 42, 0.88);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 6px;
+      padding: 16px;
+      z-index: 10;
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+    }
+
+    .panel-controls {
+      top: 20px;
+      right: 24px;
+      width: 320px;
+    }
+
+    .panel-title {
+      font-size: 11px;
+      font-family: monospace;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #64748b;
+      margin-bottom: 12px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .section-label {
+      font-size: 10px;
+      font-family: monospace;
+      text-transform: uppercase;
+      color: #94a3b8;
+      margin-bottom: 6px;
+      display: block;
+    }
+
+    .btn-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+      margin-bottom: 14px;
+    }
+
+    .btn {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      color: #cbd5e1;
+      padding: 8px 10px;
+      font-size: 11px;
+      font-family: monospace;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      text-align: center;
+    }
+
+    .btn:hover {
+      background: rgba(255, 255, 255, 0.12);
+      color: #ffffff;
+      border-color: rgba(255, 255, 255, 0.3);
+    }
+
+    .btn.active {
+      background: #0ea5e9;
+      color: #ffffff;
+      border-color: #38bdf8;
+      font-weight: 600;
+      box-shadow: 0 0 12px rgba(14, 165, 233, 0.4);
+    }
+
+    .btn-full {
+      grid-column: span 2;
+    }
+
+    .btn-primary {
+      background: #0284c7;
+      color: #ffffff;
+      border-color: #38bdf8;
+      font-weight: 600;
+    }
+    .btn-primary:hover {
+      background: #0369a1;
+    }
+
+    /* Slider Container */
+    .slider-group {
+      margin-bottom: 14px;
+    }
+
+    .slider-header {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      font-family: monospace;
+      margin-bottom: 4px;
+    }
+
+    .slider-val {
+      color: #38bdf8;
+      font-weight: 700;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      height: 4px;
+      background: rgba(255, 255, 255, 0.15);
+      border-radius: 2px;
+      outline: none;
+      -webkit-appearance: none;
+    }
+
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: #38bdf8;
+      cursor: pointer;
+      box-shadow: 0 0 8px rgba(56, 189, 248, 0.8);
+    }
+
+    /* Stats Footer Panel */
+    .panel-stats {
+      bottom: 20px;
+      left: 24px;
+      width: 400px;
+    }
+
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      font-family: monospace;
+      font-size: 11px;
+      padding: 3px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .stat-label { color: #64748b; }
+    .stat-value { color: #e2e8f0; font-weight: 600; }
+
+    /* Compass Rose in top center */
+    .compass-container {
+      position: absolute;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(15, 23, 42, 0.88);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 50px;
+      padding: 6px 18px;
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-family: monospace;
+      font-size: 11px;
+    }
+
+    .compass-dial {
+      width: 20px;
+      height: 20px;
+      border: 1.5px solid #0ea5e9;
+      border-radius: 50%;
+      position: relative;
+    }
+
+    .compass-needle {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 2px;
+      height: 8px;
+      background: #ef4444;
+      transform-origin: 50% 0%;
+      transform: translate(-50%, 0%) rotate(0deg);
+    }
+
+    #loading-screen {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: #070a0e;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      font-family: monospace;
+      transition: opacity 0.5s ease;
+    }
+
+    .spinner {
+      width: 44px;
+      height: 44px;
+      border: 3px solid rgba(14, 165, 233, 0.2);
+      border-top-color: #38bdf8;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin-bottom: 16px;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body class="bg-dark">
+  <div id="loading-screen">
+    <div class="spinner"></div>
+    <div style="font-size: 13px; letter-spacing: 0.1em; color: #ffffff;">BAKING PBR TEXTURES & GENERATING VLCC VESSEL...</div>
+    <div style="font-size: 11px; color: #64748b; margin-top: 6px;">Weld seams, rust runoff, draft marks, pipe manifolds & accommodation</div>
+  </div>
+
+  <div class="hud-header">
+    <div class="hud-title">
+      <span>SPILLTRACE 3D VESSEL</span>
+      <span class="hud-badge">PBR Engine</span>
+    </div>
+    <div class="hud-sub">HYPERREALISTIC VLCC CRUDE OIL TANKER // 5.8:1 PROPORTIONS</div>
+  </div>
+
+  <div class="compass-container">
+    <div class="compass-dial">
+      <div id="compass-needle" class="compass-needle"></div>
+    </div>
+    <span>HEADING (COG): <strong id="compass-val" style="color: #38bdf8;">000.0°</strong></span>
+    <span style="color: #64748b;">|</span>
+    <span>BOW DIRECTION: <strong style="color: #10b981;">NORTH (0°)</strong></span>
+  </div>
+
+  <div class="panel panel-controls">
+    <div class="panel-title">
+      <span>CAMERA & INSPECTION</span>
+      <span style="font-size: 9px; color: #38bdf8;">ORBIT ENABLED</span>
+    </div>
+
+    <span class="section-label">Camera Perspectives</span>
+    <div class="btn-grid">
+      <button class="btn active" id="btn-hero" onclick="setCameraView('hero')">🚢 Hero Reference</button>
+      <button class="btn" id="btn-top" onclick="setCameraView('top')">🗺️ Top-Down (Map)</button>
+      <button class="btn" id="btn-side" onclick="setCameraView('side')">📐 Side Elevation</button>
+      <button class="btn" id="btn-bow" onclick="setCameraView('bow')">⚓ Bow Quarter</button>
+      <button class="btn btn-full" id="btn-bridge" onclick="setCameraView('bridge')">🏢 Bridge & Deckhouse View</button>
+    </div>
+
+    <span class="section-label">Heading / COG Orientation</span>
+    <div class="slider-group">
+      <div class="slider-header">
+        <span>True Heading:</span>
+        <span class="slider-val" id="heading-display">000°</span>
+      </div>
+      <input type="range" id="heading-slider" min="0" max="360" step="1" value="0">
+    </div>
+
+    <div class="btn-grid">
+      <button class="btn" id="btn-autorotate" onclick="toggleAutoRotate()">🔄 Auto Rotate</button>
+      <button class="btn" onclick="resetHeading()">🧭 Reset 000°</button>
+      <button class="btn btn-full" id="btn-vector" onclick="toggleHeadingVector()">🎯 Toggle Bow Heading Vector</button>
+    </div>
+
+    <span class="section-label">Background Mode</span>
+    <div class="btn-grid">
+      <button class="btn" onclick="setBackground('transparent')">Checkerboard</button>
+      <button class="btn active" onclick="setBackground('dark')">Dark Maritime</button>
+      <button class="btn" onclick="setBackground('ocean')">Deep Oceanic</button>
+      <button class="btn" onclick="setBackground('studio')">Studio Light</button>
+    </div>
+
+    <span class="section-label">Asset Pipeline</span>
+    <div class="btn-grid" style="margin-bottom: 0;">
+      <button class="btn btn-full btn-primary" onclick="exportModelGLB()">💾 Export Reusable .GLB Asset</button>
+    </div>
+  </div>
+
+  <div class="panel panel-stats">
+    <div class="panel-title">
+      <span>VLCC VESSEL ARCHITECTURE METRICS</span>
+      <span style="font-size: 9px; color: #10b981;">PBR CERTIFIED</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">Classification:</span>
+      <span class="stat-value">Very Large Crude Carrier (VLCC Class)</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">Dimensions / Ratio:</span>
+      <span class="stat-value">332m LOA × 58m Beam × 20.8m Draft (5.72:1)</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">Sub-Meshes:</span>
+      <span class="stat-value" id="mesh-count">Calculating...</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">Triangles / Vertices:</span>
+      <span class="stat-value" id="poly-count">Calculating...</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">Hull Plating:</span>
+      <span class="stat-value">Charcoal steel, oxide boot-top, draft marks</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">Deck Machinery:</span>
+      <span class="stat-value">Lattice catwalk, manifold valves, A-frame crane</span>
+    </div>
+    <div class="stat-row" style="border-bottom: none;">
+      <span class="stat-label">PBR Textures:</span>
+      <span class="stat-value">Baked 2K Albedo + Bump Normal + Roughness</span>
+    </div>
+  </div>
+
+  <div id="canvas-container"></div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+    import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
+
+    // ─── Application State ───────────────────────────────────────────
+    let scene, camera, renderer, controls;
+    let vesselGroup, headingVectorGroup;
+    let autoRotate = false;
+    let showHeadingVector = true;
+    let currentHeading = 0;
+    let radarScanner1, radarScanner2;
+
+    const container = document.getElementById('canvas-container');
+
+    // ─── Initialize Three.js Scene ───────────────────────────────────
+    function init() {
+      scene = new THREE.Scene();
+
+      camera = new THREE.PerspectiveCamera(
+        38,
+        window.innerWidth / window.innerHeight,
+        0.5,
+        1000
+      );
+
+      renderer = new THREE.WebGLRenderer({
+        antialias: true,
+        alpha: true,
+        preserveDrawingBuffer: true,
+        powerPreference: 'high-performance'
+      });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 1.2;
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+      container.appendChild(renderer.domElement);
+
+      controls = new OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.06;
+      controls.maxDistance = 140;
+      controls.minDistance = 6;
+      controls.target.set(0, 1.8, 2.0);
+
+      setupLighting();
+      buildTankerModel();
+
+      setCameraView('hero');
+
+      window.addEventListener('resize', onWindowResize);
+      setupUIEventListeners();
+
+      // Remove loading screen
+      setTimeout(() => {
+        const loader = document.getElementById('loading-screen');
+        if (loader) {
+          loader.style.opacity = '0';
+          setTimeout(() => loader.remove(), 500);
+        }
+      }, 500);
+
+      animate();
+    }
+
+    // ─── Studio & Maritime Lighting ──────────────────────────────────
+    function setupLighting() {
+      // Soft ambient light
+      const ambientLight = new THREE.AmbientLight(0xdce7f2, 1.0);
+      scene.add(ambientLight);
+
+      // Key Directional Sunlight (low raking angle for plate seam relief)
+      const sunLight = new THREE.DirectionalLight(0xfff6ea, 2.4);
+      sunLight.position.set(28, 38, 30);
+      sunLight.castShadow = true;
+      sunLight.shadow.mapSize.width = 2048;
+      sunLight.shadow.mapSize.height = 2048;
+      sunLight.shadow.camera.near = 5;
+      sunLight.shadow.camera.far = 140;
+      sunLight.shadow.camera.left = -32;
+      sunLight.shadow.camera.right = 32;
+      sunLight.shadow.camera.top = 32;
+      sunLight.shadow.camera.bottom = -32;
+      sunLight.shadow.bias = -0.0003;
+      scene.add(sunLight);
+
+      // Secondary Cool Sky Fill Light (Port / Aft)
+      const fillLight = new THREE.DirectionalLight(0x7599c9, 1.2);
+      fillLight.position.set(-28, 24, -28);
+      scene.add(fillLight);
+
+      // Under-Hull Warm Ground / Waterline Bounce Light
+      const bounceLight = new THREE.DirectionalLight(0x2d1a15, 0.85);
+      bounceLight.position.set(0, -25, 0);
+      scene.add(bounceLight);
+
+      // Subtle Rim Light for silhouette edge pop
+      const rimLight = new THREE.DirectionalLight(0xa5c9eb, 1.1);
+      rimLight.position.set(-15, 12, -35);
+      scene.add(rimLight);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // PROCEDURAL PBR TEXTURE GENERATORS (2K BAKED MAPS)
+    // ═══════════════════════════════════════════════════════════════════
+
+    // 1. Hull Plating Texture (Albedo + Rust Streaks + Draft Marks + Weld Seams)
+    function createHullPlatingTextures() {
+      const w = 2048;
+      const h = 512;
+
+      // --- Albedo Canvas ---
+      const canvasColor = document.createElement('canvas');
+      canvasColor.width = w;
+      canvasColor.height = h;
+      const ctx = canvasColor.getContext('2d');
+
+      // Topside Charcoal Hull (#1b2430)
+      ctx.fillStyle = '#1c2532';
+      ctx.fillRect(0, 0, w, h);
+
+      // Boot-top Band Oxide Red (#7a2820 to #691f18) in lower half
+      const gradBoot = ctx.createLinearGradient(0, 240, 0, h);
+      gradBoot.addColorStop(0, '#86291e');
+      gradBoot.addColorStop(0.3, '#75231b');
+      gradBoot.addColorStop(1, '#5e1b15');
+      ctx.fillStyle = gradBoot;
+      ctx.fillRect(0, 240, w, h - 240);
+
+      // Tidal Waterline Scum / Salt Crust Line at boundary
+      ctx.fillStyle = 'rgba(16, 26, 36, 0.85)';
+      ctx.fillRect(0, 236, w, 8);
+      ctx.fillStyle = 'rgba(148, 163, 184, 0.25)';
+      ctx.fillRect(0, 242, w, 3);
+
+      // Horizontal Steel Plate Courses (Welded seams)
+      ctx.strokeStyle = 'rgba(10, 15, 22, 0.7)';
+      ctx.lineWidth = 2;
+      [60, 120, 180, 240, 310, 380, 450].forEach(y => {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(w, y);
+        ctx.stroke();
+
+        // Subtle specular highlight line below weld
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(0, y + 1.5);
+        ctx.lineTo(w, y + 1.5);
+        ctx.stroke();
+        ctx.strokeStyle = 'rgba(10, 15, 22, 0.7)';
+        ctx.lineWidth = 2;
+      });
+
+      // Vertical Welded Seams along Hull Length
+      const plateWidth = 96;
+      for (let x = plateWidth; x < w; x += plateWidth) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, h);
+        ctx.stroke();
+
+        // Subtle plate tone variation
+        if ((x / plateWidth) % 2 === 0) {
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.025)';
+          ctx.fillRect(x - plateWidth, 0, plateWidth, 240);
+        } else {
+          ctx.fillStyle = 'rgba(0, 0, 0, 0.035)';
+          ctx.fillRect(x - plateWidth, 0, plateWidth, 240);
+        }
+      }
+
+      // Vertical Rust Bleed Runoff from Deck Scuppers & Seams
+      for (let i = 0; i < 48; i++) {
+        const rx = 30 + i * 42 + (Math.sin(i * 9) * 12);
+        const rLen = 40 + Math.abs(Math.sin(i * 3.7)) * 140;
+        const rWidth = 2 + (i % 3);
+
+        const rustGrad = ctx.createLinearGradient(rx, 0, rx, rLen);
+        rustGrad.addColorStop(0, 'rgba(168, 68, 32, 0.65)');
+        rustGrad.addColorStop(0.4, 'rgba(138, 52, 24, 0.4)');
+        rustGrad.addColorStop(1, 'rgba(120, 48, 20, 0)');
+
+        ctx.fillStyle = rustGrad;
+        ctx.fillRect(rx - rWidth / 2, 0, rWidth, rLen);
+
+        // Rust bleed from boot-top waterline downward
+        const rLenBoot = 30 + Math.abs(Math.cos(i * 2.1)) * 90;
+        const rustBootGrad = ctx.createLinearGradient(rx, 240, rx, 240 + rLenBoot);
+        rustBootGrad.addColorStop(0, 'rgba(120, 36, 20, 0.55)');
+        rustBootGrad.addColorStop(1, 'rgba(80, 20, 10, 0)');
+        ctx.fillStyle = rustBootGrad;
+        ctx.fillRect(rx - 1, 240, 2, rLenBoot);
+      }
+
+      // Hawse Pipe Anchor Rust Bleed (Front Section)
+      const hawseRust = ctx.createRadialGradient(280, 50, 5, 280, 160, 120);
+      hawseRust.addColorStop(0, 'rgba(180, 75, 30, 0.7)');
+      hawseRust.addColorStop(0.5, 'rgba(140, 50, 20, 0.35)');
+      hawseRust.addColorStop(1, 'rgba(100, 35, 15, 0)');
+      ctx.fillStyle = hawseRust;
+      ctx.fillRect(200, 20, 160, 220);
+
+      // White Sheer Line Accent Stripe near Deck Edge
+      ctx.fillStyle = '#e2e8f0';
+      ctx.fillRect(0, 12, w, 5);
+
+      // Bow Draft Markings (White Stenciled Roman / Metric numerals)
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 9px monospace';
+      ctx.textAlign = 'right';
+      const draftMarks = ['22M', '20M', '18M', '16M', '14M', '12M', '10M', '8M', '6M', '4M', '2M'];
+      draftMarks.forEach((m, idx) => {
+        const my = 110 + idx * 32;
+        ctx.fillText(m, 140, my);
+        ctx.fillRect(144, my - 3, 12, 2);
+      });
+
+      // Stenciled Vessel IMO & Identification Stencil (Midships Topside)
+      ctx.font = 'bold 12px monospace';
+      ctx.textAlign = 'left';
+      ctx.fillStyle = 'rgba(241, 245, 249, 0.85)';
+      ctx.fillText('IMO 9845722', 960, 110);
+      ctx.font = 'bold 10px monospace';
+      ctx.fillStyle = 'rgba(203, 213, 225, 0.7)';
+      ctx.fillText('VLCC AURORA // MONROVIA', 960, 128);
+
+      // Bulbous Bow Warning Mark Stencil
+      ctx.strokeStyle = '#ef4444';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(80, 290, 18, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = '#ef4444';
+      ctx.font = 'bold 14px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('B', 80, 295);
+
+      // --- Normal / Bump Canvas ---
+      const canvasBump = document.createElement('canvas');
+      canvasBump.width = w;
+      canvasBump.height = h;
+      const bCtx = canvasBump.getContext('2d');
+
+      bCtx.fillStyle = '#808080';
+      bCtx.fillRect(0, 0, w, h);
+
+      // Embossed Weld Beams (White top edge + Black bottom edge)
+      [60, 120, 180, 240, 310, 380, 450].forEach(y => {
+        bCtx.fillStyle = '#ffffff';
+        bCtx.fillRect(0, y - 1, w, 1);
+        bCtx.fillStyle = '#000000';
+        bCtx.fillRect(0, y + 1, w, 1);
+      });
+
+      for (let x = plateWidth; x < w; x += plateWidth) {
+        bCtx.fillStyle = '#ffffff';
+        bCtx.fillRect(x - 1, 0, 1, h);
+        bCtx.fillStyle = '#000000';
+        bCtx.fillRect(x + 1, 0, 1, h);
+
+        // Rivet dots along seams
+        for (let ry = 8; ry < h; ry += 24) {
+          bCtx.fillStyle = '#e0e0e0';
+          bCtx.beginPath();
+          bCtx.arc(x - 4, ry, 1.5, 0, Math.PI * 2);
+          bCtx.fill();
+        }
+      }
+
+      // Convert to Three.js Textures
+      const texColor = new THREE.CanvasTexture(canvasColor);
+      texColor.wrapS = THREE.RepeatWrapping;
+      texColor.wrapT = THREE.ClampToEdgeWrapping;
+
+      const texBump = new THREE.CanvasTexture(canvasBump);
+      texBump.wrapS = THREE.RepeatWrapping;
+      texBump.wrapT = THREE.ClampToEdgeWrapping;
+
+      return { texColor, texBump };
+    }
+
+    // 2. Cargo Deck Texture (Terracotta Non-Slip, Yellow Walkways & Spill Trays)
+    function createDeckTextures() {
+      const size = 1024;
+      const canvas = document.createElement('canvas');
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext('2d');
+
+      // Terracotta Oxide Deck Coating (#733328)
+      ctx.fillStyle = '#733328';
+      ctx.fillRect(0, 0, size, size);
+
+      // Steel Deck Plate Orthogonal Welds (Grid)
+      ctx.strokeStyle = 'rgba(40, 15, 12, 0.4)';
+      ctx.lineWidth = 2;
+      for (let p = 64; p < size; p += 64) {
+        ctx.beginPath();
+        ctx.moveTo(p, 0); ctx.lineTo(p, size);
+        ctx.moveTo(0, p); ctx.lineTo(size, p);
+        ctx.stroke();
+      }
+
+      // Catwalk Central Access Corridor (Hazard Yellow Safety Striping)
+      ctx.fillStyle = 'rgba(234, 179, 8, 0.85)';
+      ctx.fillRect(size / 2 - 40, 0, 4, size);
+      ctx.fillRect(size / 2 + 36, 0, 4, size);
+
+      // Transverse Hazard Crosswalks
+      for (let y = 128; y < size; y += 256) {
+        ctx.fillRect(size / 2 - 120, y, 240, 6);
+        ctx.fillStyle = 'rgba(234, 179, 8, 0.3)';
+        ctx.fillRect(size / 2 - 120, y + 6, 240, 18);
+        ctx.fillStyle = 'rgba(234, 179, 8, 0.85)';
+      }
+
+      // Midships Manifold Spill Coaming Zone (Dark containment box)
+      ctx.fillStyle = 'rgba(20, 20, 22, 0.75)';
+      ctx.fillRect(size / 2 - 180, size / 2 - 100, 360, 200);
+      ctx.strokeStyle = '#eab308';
+      ctx.lineWidth = 5;
+      ctx.strokeRect(size / 2 - 180, size / 2 - 100, 360, 200);
+
+      // "NO SMOKING" Safety Stencil on Deck
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 16px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('SAFETY FIRST — NO SMOKING', size / 2, size / 2 - 60);
+
+      // Subtle non-slip grit noise
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.05)';
+      for (let i = 0; i < 2000; i++) {
+        const nx = Math.random() * size;
+        const ny = Math.random() * size;
+        ctx.fillRect(nx, ny, 2, 2);
+      }
+
+      const texDeck = new THREE.CanvasTexture(canvas);
+      texDeck.wrapS = THREE.RepeatWrapping;
+      texDeck.wrapT = THREE.RepeatWrapping;
+      texDeck.repeat.set(1, 4);
+
+      return texDeck;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // HIGH-QUALITY VLCC TANKER 3D MODEL BUILDER
+    // ═══════════════════════════════════════════════════════════════════
+    function buildTankerModel() {
+      vesselGroup = new THREE.Group();
+      vesselGroup.name = "CrudeTankerVessel";
+
+      // ─── Generate Baked Textures ────────────────────────────────────
+      const { texColor: texHullColor, texBump: texHullBump } = createHullPlatingTextures();
+      const texDeck = createDeckTextures();
+
+      // ─── Palette / Materials (PBR) ──────────────────────────────────
+      // Topside Steel Hull with baked weld seams, rust bloom & draft marks
+      const matHullTop = new THREE.MeshStandardMaterial({
+        map: texHullColor,
+        bumpMap: texHullBump,
+        bumpScale: 0.04,
+        roughness: 0.38,
+        metalness: 0.22,
+        name: "Hull_Topside_PBR"
+      });
+
+      // Bottom Keel / Boot-Topping Oxide Red with bump seams
+      const matHullBottom = new THREE.MeshStandardMaterial({
+        map: texHullColor,
+        bumpMap: texHullBump,
+        bumpScale: 0.05,
+        roughness: 0.52,
+        metalness: 0.12,
+        name: "Hull_BootTop_PBR"
+      });
+
+      // Sheer Line / Accents (Nautical White / Silver)
+      const matSheer = new THREE.MeshStandardMaterial({
+        color: 0xf1f5f9,
+        roughness: 0.25,
+        metalness: 0.3,
+        name: "Sheer_Stripe_White"
+      });
+
+      // Cargo Deck (Terracotta Oxide Non-Slip PBR)
+      const matCargoDeck = new THREE.MeshStandardMaterial({
+        map: texDeck,
+        roughness: 0.68,
+        metalness: 0.14,
+        name: "Cargo_Deck_PBR"
+      });
+
+      // Superstructure & Bridge (Crisp Weathered Marine White)
+      const matSuperstructure = new THREE.MeshStandardMaterial({
+        color: 0xf8fafc,
+        roughness: 0.32,
+        metalness: 0.12,
+        name: "Superstructure_White"
+      });
+
+      // Bridge Windows (Tinted Polarized Marine Glass with High Specular)
+      const matWindows = new THREE.MeshStandardMaterial({
+        color: 0x07111c,
+        roughness: 0.04,
+        metalness: 0.95,
+        name: "Bridge_Windows_Glass"
+      });
+
+      // Cargo Piping, Catwalk & Cranes (Industrial Galvanized Steel)
+      const matPiping = new THREE.MeshStandardMaterial({
+        color: 0xd1d9e2,
+        roughness: 0.32,
+        metalness: 0.65,
+        name: "Piping_Galvanized"
+      });
+
+      // Deck Safety Accents & Valves (Hazard Yellow & Valve Red)
+      const matYellowAccent = new THREE.MeshStandardMaterial({
+        color: 0xeab308,
+        roughness: 0.35,
+        metalness: 0.25,
+        name: "Safety_Yellow"
+      });
+
+      const matValveRed = new THREE.MeshStandardMaterial({
+        color: 0xef4444,
+        roughness: 0.3,
+        metalness: 0.3,
+        name: "Valve_Red"
+      });
+
+      // Lifeboats (SOLAS International Safety Orange)
+      const matLifeboat = new THREE.MeshStandardMaterial({
+        color: 0xf97316,
+        roughness: 0.28,
+        metalness: 0.1,
+        name: "Lifeboat_SOLAS_Orange"
+      });
+
+      // Funnel & Exhaust Uptakes (Dark Charcoal Steel)
+      const matFunnel = new THREE.MeshStandardMaterial({
+        color: 0x161d26,
+        roughness: 0.35,
+        metalness: 0.25,
+        name: "Funnel_Charcoal"
+      });
+
+      const matExhaust = new THREE.MeshStandardMaterial({
+        color: 0x2d3748,
+        roughness: 0.2,
+        metalness: 0.85,
+        name: "Exhaust_Steel"
+      });
+
+      // ─── 1. HULL GEOMETRY (VLCC 5.8:1 AUTHENTIC PROPORTIONS) ────────
+      // Length = 38.0 units (Z from +19.0 to -19.0, Bow at +Z, Stern at -Z)
+      // Beam = 6.4 units (X from -3.2 to +3.2)
+      // Main Deck Y = 1.95, Waterline Y = 0.0, Keel Y = -1.85
+      
+      const halfBeam = 3.2;
+      const length = 38.0;
+      const deckY = 1.95;
+      const keelY = -1.85;
+      const waterY = 0.0;
+
+      // Upper Topside Hull Profile (Hydrodynamic flare at bow + cruiser transom stern)
+      const hullShape = new THREE.Shape();
+      hullShape.moveTo(0, 19.0); // Stem tip at bow
+      // Bow starboard flare curve
+      hullShape.bezierCurveTo(halfBeam * 0.42, 18.5, halfBeam * 0.9, 15.8, halfBeam, 12.0);
+      // Parallel midbody (straight starboard topside)
+      hullShape.lineTo(halfBeam, -12.0);
+      // Stern quarter taper into rounded cruiser transom
+      hullShape.bezierCurveTo(halfBeam, -16.2, halfBeam * 0.72, -18.4, halfBeam * 0.38, -19.0);
+      hullShape.lineTo(-halfBeam * 0.38, -19.0);
+      hullShape.bezierCurveTo(-halfBeam * 0.72, -18.4, -halfBeam, -16.2, -halfBeam, -12.0);
+      // Parallel midbody (port topside)
+      hullShape.lineTo(-halfBeam, 12.0);
+      // Bow port flare curve
+      hullShape.bezierCurveTo(-halfBeam * 0.9, 15.8, -halfBeam * 0.42, 18.5, 0, 19.0);
+
+      // Extrude Upper Topside Hull
+      const extrudeSettingsTop = {
+        steps: 1,
+        depth: deckY - waterY,
+        bevelEnabled: true,
+        bevelThickness: 0.14,
+        bevelSize: 0.09,
+        bevelSegments: 3
+      };
+      const geoHullTop = new THREE.ExtrudeGeometry(hullShape, extrudeSettingsTop);
+      geoHullTop.rotateX(Math.PI / 2);
+      geoHullTop.translate(0, deckY, 0);
+
+      const meshHullTop = new THREE.Mesh(geoHullTop, matHullTop);
+      meshHullTop.castShadow = true;
+      meshHullTop.receiveShadow = true;
+      vesselGroup.add(meshHullTop);
+
+      // White Sheer Line Accent Molding around topside edge
+      const sheerGeo = new THREE.CylinderGeometry(halfBeam * 1.01, halfBeam * 1.01, 0.12, 48, 1, true);
+      sheerGeo.scale(1, 1, 38.0 / (halfBeam * 2));
+      const meshSheer = new THREE.Mesh(sheerGeo, matSheer);
+      meshSheer.position.set(0, deckY - 0.06, 0);
+      vesselGroup.add(meshSheer);
+
+      // Lower Hull / Bottom Keel (Boot-topping down to flat bottom keel plate)
+      const bottomShape = new THREE.Shape();
+      const bottomBeam = halfBeam * 0.93;
+      bottomShape.moveTo(0, 18.6);
+      bottomShape.bezierCurveTo(bottomBeam * 0.38, 18.0, bottomBeam * 0.86, 15.2, bottomBeam, 11.5);
+      bottomShape.lineTo(bottomBeam, -11.5);
+      bottomShape.bezierCurveTo(bottomBeam, -15.8, bottomBeam * 0.68, -17.8, bottomBeam * 0.32, -18.5);
+      bottomShape.lineTo(-bottomBeam * 0.32, -18.5);
+      bottomShape.bezierCurveTo(-bottomBeam * 0.68, -17.8, -bottomBeam, -15.8, -bottomBeam, -11.5);
+      bottomShape.lineTo(-bottomBeam, 11.5);
+      bottomShape.bezierCurveTo(-bottomBeam * 0.86, 15.2, -bottomBeam * 0.38, 18.0, 0, 18.6);
+
+      const extrudeSettingsBottom = {
+        steps: 2,
+        depth: waterY - keelY,
+        bevelEnabled: true,
+        bevelThickness: 0.32,
+        bevelSize: 0.28,
+        bevelSegments: 4
+      };
+      const geoHullBottom = new THREE.ExtrudeGeometry(bottomShape, extrudeSettingsBottom);
+      geoHullBottom.rotateX(Math.PI / 2);
+      geoHullBottom.translate(0, waterY + 0.05, 0);
+
+      const meshHullBottom = new THREE.Mesh(geoHullBottom, matHullBottom);
+      meshHullBottom.castShadow = true;
+      meshHullBottom.receiveShadow = true;
+      vesselGroup.add(meshHullBottom);
+
+      // Bulbous Bow (Iconic protruding hydrodynamic torpedo at forward keel)
+      const bulbGeo = new THREE.SphereGeometry(1.2, 28, 18);
+      bulbGeo.scale(0.88, 1.15, 2.4);
+      const meshBulb = new THREE.Mesh(bulbGeo, matHullBottom);
+      meshBulb.position.set(0, keelY + 0.75, 18.4);
+      meshBulb.castShadow = true;
+      vesselGroup.add(meshBulb);
+
+      // Twin Bow Anchors, Recessed Pockets & Chains
+      [-1, 1].forEach(side => {
+        // Hawse hole pocket
+        const hawseGeo = new THREE.CylinderGeometry(0.24, 0.24, 0.6, 16);
+        hawseGeo.rotateZ(Math.PI / 2);
+        const meshHawse = new THREE.Mesh(hawseGeo, matHullTop);
+        meshHawse.position.set(side * (halfBeam * 0.54), deckY - 0.55, 17.6);
+        vesselGroup.add(meshHawse);
+
+        // Heavy Navy Stockless Anchor (Flukes & Shank)
+        const anchorGroup = new THREE.Group();
+        anchorGroup.position.set(side * (halfBeam * 0.56), deckY - 0.68, 17.65);
+
+        const shankGeo = new THREE.BoxGeometry(0.18, 0.75, 0.2);
+        const meshShank = new THREE.Mesh(shankGeo, matExhaust);
+        anchorGroup.add(meshShank);
+
+        const flukeGeo = new THREE.BoxGeometry(0.55, 0.28, 0.35);
+        const meshFluke = new THREE.Mesh(flukeGeo, matExhaust);
+        meshFluke.position.set(0, -0.35, 0.05);
+        anchorGroup.add(meshFluke);
+
+        vesselGroup.add(anchorGroup);
+      });
+
+      // ─── 2. MAIN CARGO DECK & FORECASTLE ───────────────────────────
+      const cargoDeckShape = new THREE.Shape();
+      const deckInnerBeam = halfBeam - 0.18;
+      cargoDeckShape.moveTo(0, 18.2);
+      cargoDeckShape.bezierCurveTo(deckInnerBeam * 0.38, 17.7, deckInnerBeam * 0.86, 15.2, deckInnerBeam, 11.6);
+      cargoDeckShape.lineTo(deckInnerBeam, -11.6);
+      cargoDeckShape.bezierCurveTo(deckInnerBeam, -15.8, deckInnerBeam * 0.68, -17.8, deckInnerBeam * 0.32, -18.4);
+      cargoDeckShape.lineTo(-deckInnerBeam * 0.32, -18.4);
+      cargoDeckShape.bezierCurveTo(-deckInnerBeam * 0.68, -17.8, -deckInnerBeam, -15.8, -deckInnerBeam, -11.6);
+      cargoDeckShape.lineTo(-deckInnerBeam, 11.6);
+      cargoDeckShape.bezierCurveTo(-deckInnerBeam * 0.86, 15.2, -deckInnerBeam * 0.38, 17.7, 0, 18.2);
+
+      const geoCargoDeck = new THREE.ShapeGeometry(cargoDeckShape);
+      geoCargoDeck.rotateX(-Math.PI / 2);
+      const meshCargoDeck = new THREE.Mesh(geoCargoDeck, matCargoDeck);
+      meshCargoDeck.position.set(0, deckY + 0.02, 0);
+      meshCargoDeck.receiveShadow = true;
+      vesselGroup.add(meshCargoDeck);
+
+      // Elevated Forecastle Mooring Deck at Bow
+      const forecastleGeo = new THREE.BoxGeometry(deckInnerBeam * 1.62, 0.42, 4.8);
+      const meshForecastle = new THREE.Mesh(forecastleGeo, matCargoDeck);
+      meshForecastle.position.set(0, deckY + 0.32, 16.0);
+      meshForecastle.castShadow = true;
+      meshForecastle.receiveShadow = true;
+      vesselGroup.add(meshForecastle);
+
+      // V-Shaped Forecastle Breakwater / Wave Deflector with Stiffeners
+      const breakwaterGroup = new THREE.Group();
+      breakwaterGroup.position.set(0, deckY + 0.58, 13.5);
+
+      const bwShape = new THREE.Shape();
+      bwShape.moveTo(0, 0);
+      bwShape.lineTo(deckInnerBeam * 0.78, 1.2);
+      bwShape.lineTo(-deckInnerBeam * 0.78, 1.2);
+      bwShape.closePath();
+
+      const bwGeo = new THREE.BoxGeometry(deckInnerBeam * 1.55, 0.48, 0.14);
+      bwGeo.rotateY(0.18);
+      const meshBreakwater = new THREE.Mesh(bwGeo, matSuperstructure);
+      meshBreakwater.castShadow = true;
+      breakwaterGroup.add(meshBreakwater);
+
+      // Breakwater triangular gusset stiffeners
+      [-1.8, -0.9, 0, 0.9, 1.8].forEach(gx => {
+        const gussetGeo = new THREE.BoxGeometry(0.08, 0.4, 0.5);
+        const meshGusset = new THREE.Mesh(gussetGeo, matSuperstructure);
+        meshGusset.position.set(gx, 0, -0.22);
+        breakwaterGroup.add(meshGusset);
+      });
+      vesselGroup.add(breakwaterGroup);
+
+      // Forecastle Anchor Windlasses & Mooring Winches
+      [-1, 1].forEach(side => {
+        const windlassGroup = new THREE.Group();
+        windlassGroup.position.set(side * 1.2, deckY + 0.65, 16.3);
+
+        const wBase = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.45, 1.1), matPiping);
+        windlassGroup.add(wBase);
+
+        const wildcat = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.75, 16), matExhaust);
+        wildcat.rotation.z = Math.PI / 2;
+        wildcat.position.y = 0.3;
+        windlassGroup.add(wildcat);
+
+        const brakeWheel = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.03, 8, 16), matValveRed);
+        brakeWheel.position.set(0, 0.6, 0.3);
+        windlassGroup.add(brakeWheel);
+
+        vesselGroup.add(windlassGroup);
+      });
+
+      // Jackstaff Mast at Bow Stem with Rigging Stay
+      const jackstaffGeo = new THREE.CylinderGeometry(0.05, 0.1, 3.6, 8);
+      const meshJackstaff = new THREE.Mesh(jackstaffGeo, matSuperstructure);
+      meshJackstaff.position.set(0, deckY + 2.1, 17.8);
+      vesselGroup.add(meshJackstaff);
+
+      const navLightBow = new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 8), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+      navLightBow.position.set(0, deckY + 3.9, 17.8);
+      vesselGroup.add(navLightBow);
+
+      // ─── 3. CARGO PIPING, MANIFOLDS & CATWALK ──────────────────────
+      // Elevated Catwalk Gangway with Open-Lattice Truss Supports
+      const catwalkLength = 23.5;
+      const catwalkGroup = new THREE.Group();
+      catwalkGroup.position.set(0, deckY + 0.52, 1.0);
+
+      // Walking Platform Deck
+      const catwalkMesh = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.09, catwalkLength), matPiping);
+      catwalkMesh.castShadow = true;
+      catwalkGroup.add(catwalkMesh);
+
+      // Non-Slip Yellow Walkway Surface
+      const treadMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.5, catwalkLength), matYellowAccent);
+      treadMesh.rotation.x = -Math.PI / 2;
+      treadMesh.position.y = 0.05;
+      catwalkGroup.add(treadMesh);
+
+      // Steel Safety Railings with Stanchions
+      [-0.34, 0.34].forEach(rx => {
+        const topRail = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.03, catwalkLength), matPiping);
+        topRail.position.set(rx, 0.38, 0);
+        catwalkGroup.add(topRail);
+
+        const midRail = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.02, catwalkLength), matPiping);
+        midRail.position.set(rx, 0.2, 0);
+        catwalkGroup.add(midRail);
+
+        // Stanchion posts every 2 units
+        for (let sz = -catwalkLength / 2; sz <= catwalkLength / 2; sz += 2.0) {
+          const stanchion = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.38, 6), matPiping);
+          stanchion.position.set(rx, 0.19, sz);
+          catwalkGroup.add(stanchion);
+        }
+      });
+
+      // Under-Walkway Lattice Support Frames every 2.4 units down to deck
+      for (let lz = -catwalkLength / 2 + 1; lz <= catwalkLength / 2 - 1; lz += 2.4) {
+        [-0.32, 0.32].forEach(lx => {
+          const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.5, 6), matPiping);
+          leg.position.set(lx, -0.25, lz);
+          catwalkGroup.add(leg);
+        });
+
+        // Cross-brace diagonal
+        const brace = new THREE.Mesh(new THREE.BoxGeometry(0.68, 0.03, 0.03), matPiping);
+        brace.position.set(0, -0.25, lz);
+        brace.rotation.z = 0.35;
+        catwalkGroup.add(brace);
+      }
+      vesselGroup.add(catwalkGroup);
+
+      // Longitudinal Cargo Pipelines (6 parallel pipes running fore-aft)
+      const pipeOffsets = [-1.3, -1.0, -0.7, 0.7, 1.0, 1.3];
+      pipeOffsets.forEach((px, pIdx) => {
+        const isBunker = pIdx === 0 || pIdx === 5;
+        const pipeRadius = isBunker ? 0.08 : 0.11;
+        const pipeGeo = new THREE.CylinderGeometry(pipeRadius, pipeRadius, catwalkLength + 2.0, 12);
+        pipeGeo.rotateX(Math.PI / 2);
+
+        const pipeMat = pIdx % 2 === 0 ? matPiping : matSuperstructure;
+        const meshPipe = new THREE.Mesh(pipeGeo, pipeMat);
+        meshPipe.position.set(px, deckY + 0.25, 1.0);
+        meshPipe.castShadow = true;
+        vesselGroup.add(meshPipe);
+
+        // Pipe Support Saddles every 2.8 units
+        for (let pz = -10.0; pz <= 12.0; pz += 2.8) {
+          const saddle = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.22, 0.14), matExhaust);
+          saddle.position.set(px, deckY + 0.11, pz);
+          vesselGroup.add(saddle);
+        }
+
+        // Expansion Loops (U-bends) at Z = -4.0 and +4.0
+        [-4.0, 4.0].forEach(ez => {
+          const uBend = new THREE.Mesh(new THREE.TorusGeometry(0.28, pipeRadius, 8, 16, Math.PI), pipeMat);
+          uBend.position.set(px + (px > 0 ? 0.28 : -0.28), deckY + 0.25, ez);
+          uBend.rotation.y = Math.PI / 2;
+          vesselGroup.add(uBend);
+        });
+      });
+
+      // Midships Cargo Manifold (Cross-deck loading valves at center Z = 0.5)
+      const manifoldGroup = new THREE.Group();
+      manifoldGroup.position.set(0, deckY, 0.5);
+
+      // Transverse Main Manifold Header Pipes
+      [-0.4, 0.4].forEach(mz => {
+        const mHeader = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.14, 0.14, halfBeam * 1.9, 16),
+          matPiping
+        );
+        mHeader.rotation.z = Math.PI / 2;
+        mHeader.position.set(0, 0.62, mz);
+        mHeader.castShadow = true;
+        manifoldGroup.add(mHeader);
+
+        // 8 Manifold Valve Flanges with Red Handwheels
+        [-2.8, -2.4, -2.0, -1.6, 1.6, 2.0, 2.4, 2.8].forEach(vx => {
+          const flange = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.08, 12), matPiping);
+          flange.rotation.z = Math.PI / 2;
+          flange.position.set(vx, 0.62, mz);
+          manifoldGroup.add(flange);
+
+          const wheel = new THREE.Mesh(new THREE.TorusGeometry(0.12, 0.025, 6, 16), matValveRed);
+          wheel.rotation.x = Math.PI / 2;
+          wheel.position.set(vx, 0.85, mz);
+          manifoldGroup.add(wheel);
+        });
+      });
+
+      // Manifold Drip Trays / Containment Coaming
+      [-2.2, 2.2].forEach(tx => {
+        const tray = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.2, 1.8), matYellowAccent);
+        tray.position.set(tx, 0.1, 0);
+        manifoldGroup.add(tray);
+      });
+
+      // Midships Hose-Handling Portal Gantry Crane (A-Frame)
+      const craneGroup = new THREE.Group();
+      craneGroup.position.set(0, 0, 1.4);
+
+      // Sturdy upright legs
+      [-1.4, 1.4].forEach(cx => {
+        const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.11, 2.4, 8), matSuperstructure);
+        leg.position.set(cx, 1.2, 0);
+        leg.castShadow = true;
+        craneGroup.add(leg);
+      });
+
+      // Gantry Crossbeam
+      const crossbeam = new THREE.Mesh(new THREE.BoxGeometry(3.0, 0.2, 0.3), matSuperstructure);
+      crossbeam.position.set(0, 2.35, 0);
+      crossbeam.castShadow = true;
+      craneGroup.add(crossbeam);
+
+      // Horizontal Boom Beam extending to ship edges
+      const boom = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.16, 0.16), matSuperstructure);
+      boom.position.set(0, 2.52, 0);
+      boom.castShadow = true;
+      craneGroup.add(boom);
+
+      // Yellow Hoist Trolley & Hook Block
+      const hoist = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.45, 0.28), matYellowAccent);
+      hoist.position.set(1.2, 1.9, 0);
+      craneGroup.add(hoist);
+
+      manifoldGroup.add(craneGroup);
+      vesselGroup.add(manifoldGroup);
+
+      // 12 Cargo Tank Hatches & P/V Vent Risers along the Deck
+      const tankBaysZ = [-9.0, -6.0, -3.0, 4.0, 7.0, 10.0];
+      tankBaysZ.forEach(tz => {
+        [-1.8, 1.8].forEach(tx => {
+          // Cylindrical Tank Expansion Dome
+          const dome = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.45, 0.25, 16), matCargoDeck);
+          dome.position.set(tx, deckY + 0.12, tz);
+          dome.castShadow = true;
+          vesselGroup.add(dome);
+
+          // Tank Manhole Hatch Cover
+          const hatch = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.24, 0.08, 12), matExhaust);
+          hatch.position.set(tx, deckY + 0.28, tz);
+          vesselGroup.add(hatch);
+
+          // Pressure/Vacuum (P/V) High-Velocity Vent Riser Stack
+          const pvRiser = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.95, 8), matPiping);
+          pvRiser.position.set(tx + (tx > 0 ? 0.35 : -0.35), deckY + 0.55, tz);
+          pvRiser.castShadow = true;
+          vesselGroup.add(pvRiser);
+
+          // Flame Arrestor Cowl / Vent Cap
+          const cap = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.18, 8), matYellowAccent);
+          cap.position.set(tx + (tx > 0 ? 0.35 : -0.35), deckY + 1.05, tz);
+          vesselGroup.add(cap);
+        });
+      });
+
+      // Deck Fire-Fighting Foam Monitors along Catwalk
+      [-7.5, -1.5, 5.5, 11.5].forEach(fz => {
+        const monitorGroup = new THREE.Group();
+        monitorGroup.position.set(0.42, deckY + 0.58, fz);
+
+        const mStand = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.4, 6), matPiping);
+        monitorGroup.add(mStand);
+
+        const mCannon = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.04, 0.3, 8), matValveRed);
+        mCannon.rotation.x = 0.5;
+        mCannon.position.set(0, 0.25, 0);
+        monitorGroup.add(mCannon);
+
+        vesselGroup.add(monitorGroup);
+      });
+
+      // ─── 4. SUPERSTRUCTURE (BRIDGE / ACCOMMODATION BLOCK) ───────────
+      // Multi-tier Aft Deckhouse (Z = -10.5 to -16.5)
+      const houseGroup = new THREE.Group();
+      houseGroup.position.set(0, deckY, -13.2);
+
+      // Tier 1: Main Accommodation Block Base
+      const tier1Geo = new THREE.BoxGeometry(5.2, 1.25, 5.4);
+      const meshTier1 = new THREE.Mesh(tier1Geo, matSuperstructure);
+      meshTier1.position.set(0, 0.62, 0);
+      meshTier1.castShadow = true;
+      meshTier1.receiveShadow = true;
+      houseGroup.add(meshTier1);
+
+      // Tier 2: Officers & Crew Living Quarters with Window Openings
+      const tier2Geo = new THREE.BoxGeometry(4.7, 1.05, 4.6);
+      const meshTier2 = new THREE.Mesh(tier2Geo, matSuperstructure);
+      meshTier2.position.set(0, 1.77, 0.1);
+      meshTier2.castShadow = true;
+      meshTier2.receiveShadow = true;
+      houseGroup.add(meshTier2);
+
+      // Cabin Rectangular Windows (Starboard, Port and Front)
+      for (let wx = -1.8; wx <= 1.8; wx += 0.72) {
+        const win = new THREE.Mesh(new THREE.PlaneGeometry(0.32, 0.24), matWindows);
+        win.position.set(wx, 1.82, 2.41);
+        houseGroup.add(win);
+      }
+
+      // Tier 3: Boat Deck & Upper Mess
+      const tier3Geo = new THREE.BoxGeometry(4.4, 0.95, 4.0);
+      const meshTier3 = new THREE.Mesh(tier3Geo, matSuperstructure);
+      meshTier3.position.set(0, 2.77, 0.18);
+      meshTier3.castShadow = true;
+      meshTier3.receiveShadow = true;
+      houseGroup.add(meshTier3);
+
+      // Tier 4: Navigation Bridge Deck
+      const bridgeGeo = new THREE.BoxGeometry(4.1, 1.0, 3.2);
+      const meshBridge = new THREE.Mesh(bridgeGeo, matSuperstructure);
+      meshBridge.position.set(0, 3.74, 0.38);
+      meshBridge.castShadow = true;
+      meshBridge.receiveShadow = true;
+      houseGroup.add(meshBridge);
+
+      // Cantilevered Bridge Wings (Extending beyond hull for pilot navigation)
+      const wingLength = 1.45;
+      [-1, 1].forEach(side => {
+        const wingGeo = new THREE.BoxGeometry(wingLength, 0.8, 1.5);
+        const meshWing = new THREE.Mesh(wingGeo, matSuperstructure);
+        meshWing.position.set(side * (2.05 + wingLength / 2), 3.84, 0.85);
+        meshWing.castShadow = true;
+        meshWing.receiveShadow = true;
+        houseGroup.add(meshWing);
+
+        // Bridge Wing Pilot Observation Windows
+        const wingWin = new THREE.Mesh(new THREE.PlaneGeometry(0.38, 0.45), matWindows);
+        wingWin.rotation.y = side * Math.PI / 2;
+        wingWin.position.set(side * (2.05 + wingLength + 0.01), 3.94, 0.85);
+        houseGroup.add(wingWin);
+
+        // Safety perimeter handrail on bridge wing
+        const wingRail = new THREE.Mesh(new THREE.BoxGeometry(wingLength, 0.28, 0.03), matPiping);
+        wingRail.position.set(side * (2.05 + wingLength / 2), 4.38, 1.58);
+        houseGroup.add(wingRail);
+      });
+
+      // Wraparound Panoramic Navigation Bridge Windows
+      const fwdBridgeWin = new THREE.Mesh(new THREE.PlaneGeometry(3.7, 0.48), matWindows);
+      fwdBridgeWin.position.set(0, 3.88, 1.99);
+      houseGroup.add(fwdBridgeWin);
+
+      // Bridge Window Mullion Pillars
+      for (let mx = -1.6; mx <= 1.6; mx += 0.55) {
+        const pillar = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.52, 0.05), matSuperstructure);
+        pillar.position.set(mx, 3.88, 2.0);
+        houseGroup.add(pillar);
+      }
+
+      // Side Bridge Windows
+      [-1, 1].forEach(side => {
+        const sideWin = new THREE.Mesh(new THREE.PlaneGeometry(1.9, 0.48), matWindows);
+        sideWin.rotation.y = side * Math.PI / 2;
+        sideWin.position.set(side * 2.06, 3.88, 0.7);
+        houseGroup.add(sideWin);
+      });
+
+      // Bridge Roof / Monkey Island Platform
+      const monkeyIsland = new THREE.Mesh(new THREE.BoxGeometry(4.5, 0.16, 3.5), matSuperstructure);
+      monkeyIsland.position.set(0, 4.32, 0.38);
+      monkeyIsland.castShadow = true;
+      houseGroup.add(monkeyIsland);
+
+      // ─── 5. LIFEBOATS & GRAVITY DAVITS ─────────────────────────────
+      [-1, 1].forEach(side => {
+        const lifeboatGroup = new THREE.Group();
+        lifeboatGroup.position.set(side * 2.7, 2.3, -0.35);
+
+        // Fully Enclosed SOLAS Orange Lifeboat
+        const boatGeo = new THREE.ConeGeometry(0.45, 2.0, 12);
+        boatGeo.rotateX(Math.PI / 2);
+        boatGeo.scale(0.85, 0.82, 1.0);
+        const meshBoat = new THREE.Mesh(boatGeo, matLifeboat);
+        meshBoat.castShadow = true;
+        lifeboatGroup.add(meshBoat);
+
+        // Lifeboat Canopy / Boarding Hatch
+        const canopy = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.3, 1.15), matLifeboat);
+        canopy.position.set(0, 0.18, 0);
+        lifeboatGroup.add(canopy);
+
+        // White Gravity Davit Frame Arms
+        [-0.65, 0.65].forEach(dz => {
+          const davit = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.95, 0.09), matSuperstructure);
+          davit.position.set(-side * 0.18, 0.15, dz);
+          lifeboatGroup.add(davit);
+        });
+
+        houseGroup.add(lifeboatGroup);
+      });
+
+      // ─── 6. FUNNEL & SMOKE STACK ───────────────────────────────────
+      const funnelGroup = new THREE.Group();
+      funnelGroup.position.set(0, 1.6, -2.6);
+
+      // Aerodynamic Tapered Funnel Casing
+      const funnelGeo = new THREE.CylinderGeometry(0.9, 1.15, 2.8, 24);
+      funnelGeo.scale(0.72, 1.0, 1.25);
+      const meshFunnel = new THREE.Mesh(funnelGeo, matFunnel);
+      meshFunnel.position.set(0, 1.4, 0);
+      meshFunnel.castShadow = true;
+      funnelGroup.add(meshFunnel);
+
+      // White Identification Emblem Stripe
+      const bandGeo = new THREE.CylinderGeometry(0.92, 1.0, 0.5, 24);
+      bandGeo.scale(0.73, 1.0, 1.26);
+      const meshBand = new THREE.Mesh(bandGeo, matSuperstructure);
+      meshBand.position.set(0, 1.75, 0);
+      funnelGroup.add(meshBand);
+
+      // Funnel Exhaust Top Cap
+      const funnelCap = new THREE.Mesh(new THREE.CylinderGeometry(0.86, 0.9, 0.16, 24), matExhaust);
+      funnelCap.scale.set(0.72, 1.0, 1.25);
+      funnelCap.position.set(0, 2.85, 0);
+      funnelGroup.add(funnelCap);
+
+      // Twin Main Engine Diesel Exhaust Uptakes
+      [-0.26, 0.26].forEach(ex => {
+        const exhaust = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.85, 12), matExhaust);
+        exhaust.position.set(ex, 3.15, 0.12);
+        exhaust.castShadow = true;
+        funnelGroup.add(exhaust);
+      });
+
+      houseGroup.add(funnelGroup);
+
+      // ─── 7. RADAR MAST & SATELLITE COMMUNICATIONS ──────────────────
+      const mastGroup = new THREE.Group();
+      mastGroup.position.set(0, 4.4, 0.38);
+
+      // Main Lattice / Column Radar Mast
+      const mastGeo = new THREE.CylinderGeometry(0.08, 0.2, 3.6, 8);
+      const meshMast = new THREE.Mesh(mastGeo, matSuperstructure);
+      meshMast.position.set(0, 1.8, 0);
+      meshMast.castShadow = true;
+      mastGroup.add(meshMast);
+
+      // Yardarm Navigation Cross-Tree
+      const yardarm = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.08, 0.18), matSuperstructure);
+      yardarm.position.set(0, 2.65, 0);
+      mastGroup.add(yardarm);
+
+      // Rotating X-Band Marine Radar Scanner (Upper)
+      radarScanner1 = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.08, 0.12), matExhaust);
+      radarScanner1.position.set(0, 3.3, 0);
+      mastGroup.add(radarScanner1);
+
+      // Rotating S-Band Marine Radar Scanner (Lower)
+      radarScanner2 = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.1, 0.14), matExhaust);
+      radarScanner2.position.set(0, 2.8, 0);
+      mastGroup.add(radarScanner2);
+
+      // Satellite Communication Domes (Inmarsat Radomes)
+      [-0.95, 0.95].forEach(rx => {
+        const dome = new THREE.Mesh(new THREE.SphereGeometry(0.32, 16, 12), matSuperstructure);
+        dome.scale.set(1, 1.25, 1);
+        dome.position.set(rx, 2.95, 0);
+        dome.castShadow = true;
+        mastGroup.add(dome);
+      });
+
+      // IMO Navigation Lights (Starboard Emerald Green, Port Ruby Red, White Masthead)
+      const navLightGeo = new THREE.SphereGeometry(0.07, 8, 8);
+      
+      const lightStarboard = new THREE.Mesh(navLightGeo, new THREE.MeshBasicMaterial({ color: 0x10b981 }));
+      lightStarboard.position.set(1.3, 2.65, 0);
+      mastGroup.add(lightStarboard);
+
+      const lightPort = new THREE.Mesh(navLightGeo, new THREE.MeshBasicMaterial({ color: 0xef4444 }));
+      lightPort.position.set(-1.3, 2.65, 0);
+      mastGroup.add(lightPort);
+
+      const lightMasthead = new THREE.Mesh(navLightGeo, new THREE.MeshBasicMaterial({ color: 0xffffff }));
+      lightMasthead.position.set(0, 3.65, 0);
+      mastGroup.add(lightMasthead);
+
+      houseGroup.add(mastGroup);
+      vesselGroup.add(houseGroup);
+
+      // ─── 8. BOW HEADING VECTOR / COG INDICATOR ─────────────────────
+      headingVectorGroup = new THREE.Group();
+      headingVectorGroup.position.set(0, deckY + 0.1, 19.0);
+
+      // Cyan / Green Forward Vector Ray
+      const lineMat = new THREE.LineBasicMaterial({ color: 0x0ea5e9, linewidth: 2 });
+      const points = [new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, 8.5)];
+      const lineGeo = new THREE.BufferGeometry().setFromPoints(points);
+      headingVectorGroup.add(new THREE.Line(lineGeo, lineMat));
+
+      // Arrowhead Cone pointing Forward (Bow direction along +Z)
+      const coneGeo = new THREE.ConeGeometry(0.55, 1.5, 16);
+      coneGeo.rotateX(Math.PI / 2);
+      const coneMat = new THREE.MeshStandardMaterial({
+        color: 0x0ea5e9,
+        emissive: 0x0284c7,
+        emissiveIntensity: 0.7,
+        roughness: 0.2
+      });
+      const coneMesh = new THREE.Mesh(coneGeo, coneMat);
+      coneMesh.position.set(0, 0, 9.2);
+      headingVectorGroup.add(coneMesh);
+
+      // Orientation Compass Ring at Bow Tip
+      const ringGeo = new THREE.RingGeometry(0.8, 1.0, 24);
+      ringGeo.rotateX(-Math.PI / 2);
+      const ringMesh = new THREE.Mesh(ringGeo, coneMat);
+      headingVectorGroup.add(ringMesh);
+
+      vesselGroup.add(headingVectorGroup);
+
+      // Add assembled vessel to scene
+      scene.add(vesselGroup);
+
+      // Calculate statistics
+      updateModelStats();
+    }
+
+    // ─── Model Statistics Calculation ────────────────────────────────
+    function updateModelStats() {
+      let meshCount = 0;
+      let triangleCount = 0;
+      let vertexCount = 0;
+
+      vesselGroup.traverse(child => {
+        if (child.isMesh) {
+          meshCount++;
+          if (child.geometry) {
+            const geo = child.geometry;
+            if (geo.index) {
+              triangleCount += geo.index.count / 3;
+            } else if (geo.attributes.position) {
+              triangleCount += geo.attributes.position.count / 3;
+            }
+            if (geo.attributes.position) {
+              vertexCount += geo.attributes.position.count;
+            }
+          }
+        }
+      });
+
+      document.getElementById('mesh-count').textContent = `${meshCount} sub-meshes`;
+      document.getElementById('poly-count').textContent = `${Math.round(triangleCount).toLocaleString()} tris · ${Math.round(vertexCount).toLocaleString()} verts`;
+    }
+
+    // ─── Camera Perspective Presets ──────────────────────────────────
+    window.setCameraView = function(viewName) {
+      document.querySelectorAll('.panel-controls .btn-grid:nth-of-type(1) .btn').forEach(b => b.classList.remove('active'));
+      const activeBtn = document.getElementById(`btn-${viewName}`);
+      if (activeBtn) activeBtn.classList.add('active');
+
+      switch (viewName) {
+        case 'hero': // Matching reference image perspective: Bow at lower-left foreground, deck running up-right to bridge
+          setCameraAnimated(
+            new THREE.Vector3(28, 19, 28),
+            new THREE.Vector3(0, 1.8, 2.0),
+            900
+          );
+          break;
+        case 'top': // Plan / Map view (looking down with bow pointing North / +Z)
+          setCameraAnimated(
+            new THREE.Vector3(0, 52, 0.1),
+            new THREE.Vector3(0, 0, 0),
+            800
+          );
+          break;
+        case 'side': // Starboard Profile Elevation
+          setCameraAnimated(
+            new THREE.Vector3(45, 2.0, 0),
+            new THREE.Vector3(0, 1.8, 0),
+            800
+          );
+          break;
+        case 'bow': // Head-on Bow Quarter with bulbous bow focus
+          setCameraAnimated(
+            new THREE.Vector3(12, 5.0, 36),
+            new THREE.Vector3(0, 1.5, 14),
+            800
+          );
+          break;
+        case 'bridge': // Close-up on Superstructure & Bridge Wings
+          setCameraAnimated(
+            new THREE.Vector3(14, 9, -5),
+            new THREE.Vector3(0, 4.2, -13),
+            800
+          );
+          break;
+      }
+    };
+
+    function setCameraAnimated(targetPos, targetLookAt, duration = 800) {
+      const startPos = camera.position.clone();
+      const startLookAt = controls.target.clone();
+      const startTime = performance.now();
+
+      function update(now) {
+        const elapsed = now - startTime;
+        const t = Math.min(elapsed / duration, 1.0);
+        const ease = 1 - Math.pow(1 - t, 3); // Cubic ease out
+
+        camera.position.lerpVectors(startPos, targetPos, ease);
+        controls.target.lerpVectors(startLookAt, targetLookAt, ease);
+        controls.update();
+
+        if (t < 1.0) {
+          requestAnimationFrame(update);
+        }
+      }
+      requestAnimationFrame(update);
+    }
+
+    // ─── Heading / COG Controller ────────────────────────────────────
+    window.setHeading = function(deg) {
+      currentHeading = (deg % 360 + 360) % 360;
+      if (vesselGroup) {
+        vesselGroup.rotation.y = -THREE.MathUtils.degToRad(currentHeading);
+      }
+
+      document.getElementById('heading-display').textContent = `${String(Math.round(currentHeading)).padStart(3, '0')}°`;
+      document.getElementById('heading-slider').value = Math.round(currentHeading);
+      document.getElementById('compass-val').textContent = `${String(Math.round(currentHeading)).padStart(3, '0')}°`;
+
+      const needle = document.getElementById('compass-needle');
+      if (needle) {
+        needle.style.transform = `translate(-50%, 0%) rotate(${currentHeading}deg)`;
+      }
+    };
+
+    window.resetHeading = function() {
+      window.setHeading(0);
+    };
+
+    window.toggleAutoRotate = function() {
+      autoRotate = !autoRotate;
+      const btn = document.getElementById('btn-autorotate');
+      if (btn) {
+        if (autoRotate) {
+          btn.classList.add('active');
+          btn.textContent = '⏸ Pause Rotation';
+        } else {
+          btn.classList.remove('active');
+          btn.textContent = '🔄 Auto Rotate';
+        }
+      }
+    };
+
+    window.toggleHeadingVector = function() {
+      showHeadingVector = !showHeadingVector;
+      if (headingVectorGroup) {
+        headingVectorGroup.visible = showHeadingVector;
+      }
+      const btn = document.getElementById('btn-vector');
+      if (btn) {
+        btn.style.opacity = showHeadingVector ? '1' : '0.6';
+      }
+    };
+
+    // ─── Background Selector ─────────────────────────────────────────
+    window.setBackground = function(mode) {
+      document.body.className = `bg-${mode}`;
+      document.querySelectorAll('.panel-controls .btn-grid:nth-of-type(3) .btn').forEach(b => b.classList.remove('active'));
+      if (typeof event !== 'undefined' && event && event.target) {
+        event.target.classList.add('active');
+      }
+
+      if (mode === 'transparent') {
+        renderer.setClearColor(0x000000, 0);
+      } else if (mode === 'dark') {
+        renderer.setClearColor(0x070a0e, 1);
+      } else if (mode === 'ocean') {
+        renderer.setClearColor(0x0a1420, 1);
+      } else if (mode === 'studio') {
+        renderer.setClearColor(0x1a232f, 1);
+      }
+    };
+
+    // ─── GLB Asset Exporter ──────────────────────────────────────────
+    window.exportModelGLB = function() {
+      if (!vesselGroup) return;
+
+      const wasVectorVisible = headingVectorGroup ? headingVectorGroup.visible : true;
+      if (headingVectorGroup) headingVectorGroup.visible = false;
+
+      const prevRotY = vesselGroup.rotation.y;
+      vesselGroup.rotation.y = 0;
+
+      const exporter = new GLTFExporter();
+      const options = {
+        binary: true,
+        onlyVisible: true,
+        truncateDrawRange: true,
+      };
+
+      exporter.parse(
+        vesselGroup,
+        function(result) {
+          vesselGroup.rotation.y = prevRotY;
+          if (headingVectorGroup) headingVectorGroup.visible = wasVectorVisible;
+
+          if (result instanceof ArrayBuffer) {
+            saveArrayBuffer(result, 'vessel_tanker.glb');
+          }
+        },
+        function(error) {
+          console.error('Error exporting GLB:', error);
+          alert('GLB Export error: ' + error.message);
+        },
+        options
+      );
+    };
+
+    window.getGLBBinary = function() {
+      return new Promise((resolve, reject) => {
+        if (!vesselGroup) return reject(new Error('Vessel group not ready'));
+        const wasVectorVisible = headingVectorGroup ? headingVectorGroup.visible : true;
+        if (headingVectorGroup) headingVectorGroup.visible = false;
+        const prevRotY = vesselGroup.rotation.y;
+        vesselGroup.rotation.y = 0;
+
+        const exporter = new GLTFExporter();
+        exporter.parse(
+          vesselGroup,
+          function(result) {
+            vesselGroup.rotation.y = prevRotY;
+            if (headingVectorGroup) headingVectorGroup.visible = wasVectorVisible;
+            if (result instanceof ArrayBuffer) {
+              resolve(Array.from(new Uint8Array(result)));
+            } else {
+              reject(new Error('Exporter did not return an ArrayBuffer'));
+            }
+          },
+          function(error) {
+            reject(error);
+          },
+          { binary: true, onlyVisible: true }
+        );
+      });
+    };
+
+    function saveArrayBuffer(buffer, filename) {
+      const blob = new Blob([buffer], { type: 'application/octet-stream' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = filename;
+      link.click();
+      URL.revokeObjectURL(link.href);
+    }
+
+    // ─── UI Event Listeners ──────────────────────────────────────────
+    function setupUIEventListeners() {
+      const slider = document.getElementById('heading-slider');
+      if (slider) {
+        slider.addEventListener('input', (e) => {
+          autoRotate = false;
+          const btn = document.getElementById('btn-autorotate');
+          if (btn) {
+            btn.classList.remove('active');
+            btn.textContent = '🔄 Auto Rotate';
+          }
+          window.setHeading(parseFloat(e.target.value));
+        });
+      }
+    }
+
+    function onWindowResize() {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+
+    // ─── Render Animation Loop ───────────────────────────────────────
+    function animate(time) {
+      requestAnimationFrame(animate);
+
+      if (radarScanner1) radarScanner1.rotation.y += 0.04;
+      if (radarScanner2) radarScanner2.rotation.y += 0.03;
+
+      if (autoRotate) {
+        const nextHeading = (currentHeading + 0.4) % 360;
+        window.setHeading(nextHeading);
+      }
+
+      controls.update();
+      renderer.render(scene, camera);
+    }
+
+    init();
+  </script>
+</body>
+</html>

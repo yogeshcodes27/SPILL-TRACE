@@ -8,7 +8,7 @@
 import mapboxgl from 'mapbox-gl';
 
 const INTERACTIVE_LAYERS = [
-  'vessel-position-circle',
+  'vessels-symbol',
   'ais-tracks-line',
   'slick-fill',
   'slick-line',
@@ -77,15 +77,15 @@ export function setupMapboxInteractions(map, {
     popup
       .setLngLat(coords)
       .setHTML(
-        `<div class="font-mono text-[10px] p-0.5 bg-[#111111] text-white">
-          <span class="font-bold text-[#FACC15] block uppercase">${p.vesselName || 'VESSEL'} // ${p.mmsi || ''}</span>
-          <span>SOG: ${p.sog ?? '—'} kn · COG: ${p.cog ?? '—'}° · ${p.vesselType || 'Vessel'}</span>
+        `<div class="font-mono text-[10px] p-1.5 bg-white text-[#111111] border border-[#CCCCCC] shadow-md">
+          <span class="font-bold text-[#D97706] block uppercase tracking-wider">${p.vesselName || 'VESSEL'} // MMSI ${p.mmsi || ''}</span>
+          <span class="text-[#666666]">SOG: <strong class="text-[#111111]">${p.sog ?? '—'} kn</strong> · COG: <strong class="text-[#111111]">${p.cog ?? '—'}°</strong> · ${p.vesselType || 'Vessel'}</span>
         </div>`
       )
       .addTo(map);
   };
-  if (map.getLayer('vessel-position-circle')) {
-    map.on('mousemove', 'vessel-position-circle', onVesselHover);
+  if (map.getLayer('vessels-symbol')) {
+    map.on('mousemove', 'vessels-symbol', onVesselHover);
   }
 
   // Slick tooltip
@@ -96,9 +96,9 @@ export function setupMapboxInteractions(map, {
     popup
       .setLngLat(e.lngLat)
       .setHTML(
-        `<div class="font-mono text-[10px] p-0.5 bg-[#111111] text-white">
-          <span class="font-bold text-white block uppercase">OBSERVED SLICK GEOMETRY</span>
-          <span>Area: ${p.areaKm2 ?? '—'} km² · Major: ${p.majorAxisKm ?? '—'} km</span>
+        `<div class="font-mono text-[10px] p-1.5 bg-white text-[#111111] border border-[#CCCCCC] shadow-md">
+          <span class="font-bold text-[#C62828] block uppercase tracking-wider">OBSERVED SLICK GEOMETRY</span>
+          <span class="text-[#666666]">Area: <strong class="text-[#111111]">${p.areaKm2 ?? '—'} km²</strong> · Major Axis: <strong class="text-[#111111]">${p.majorAxisKm ?? '—'} km</strong></span>
         </div>`
       )
       .addTo(map);
@@ -115,9 +115,9 @@ export function setupMapboxInteractions(map, {
     popup
       .setLngLat(e.lngLat)
       .setHTML(
-        `<div class="font-mono text-[10px] p-0.5 bg-[#111111] text-[#EF4444]">
-          <span class="font-bold block uppercase">[ AIS TRANSMISSION GAP ${p.gapHours || ''}h ]</span>
-          <span class="text-white text-[9px]">Duration: ${p.durationMinutes || ''} min · MMSI: ${p.mmsi || ''}</span>
+        `<div class="font-mono text-[10px] p-1.5 bg-white text-[#111111] border border-[#CCCCCC] shadow-md">
+          <span class="font-bold text-[#C62828] block uppercase tracking-wider">[ AIS TRANSMISSION GAP ${p.gapHours || ''}h ]</span>
+          <span class="text-[#666666] text-[9px]">Duration: <strong class="text-[#111111]">${p.durationMinutes || ''} min</strong> · MMSI: <strong class="text-[#111111]">${p.mmsi || ''}</strong></span>
         </div>`
       )
       .addTo(map);
@@ -134,8 +134,8 @@ export function setupMapboxInteractions(map, {
       onSelectCandidate(mmsi);
     }
   };
-  if (map.getLayer('vessel-position-circle')) {
-    map.on('click', 'vessel-position-circle', onVesselClick);
+  if (map.getLayer('vessels-symbol')) {
+    map.on('click', 'vessels-symbol', onVesselClick);
   }
   if (map.getLayer('ais-tracks-line')) {
     map.on('click', 'ais-tracks-line', onVesselClick);

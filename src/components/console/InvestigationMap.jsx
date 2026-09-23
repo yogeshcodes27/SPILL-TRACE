@@ -35,6 +35,7 @@ import {
 import { setupMapboxInteractions } from '../../services/map/mapboxInteractions.js';
 import { INITIAL_INCIDENTS } from '../../data/incidentsData.js';
 import { getScenarioIdForIncident } from '../../services/spilltraceService.js';
+import { calculateBearingDeg } from '../../services/map/mapGeometry.js';
 
 const BASEMAP_MODES = {
   SATELLITE: 'satellite',
@@ -55,6 +56,7 @@ export default function InvestigationMap({
   const mapReadyRef = useRef(false);
   const lastScenarioIdRef = useRef(null);
   const lastActiveTabRef = useRef(null);
+  const prevCandidateMmsiRef = useRef(selectedCandidateMmsi);
 
   // Basemap mode: SATELLITE (default) | MAP (nautical light)
   const [basemapMode, setBasemapMode] = useState(BASEMAP_MODES.SATELLITE);
@@ -129,11 +131,13 @@ export default function InvestigationMap({
       );
 
       if (bounds) {
-        const padding = { top: 50, bottom: 50, left: 60, right: 60 };
-        const maxZoom = tab === '03' ? 14 : tab === '02' ? 13 : 11;
+        const padding = { top: 40, bottom: 40, left: 45, right: 45 };
+        const maxZoom = tab === '03' ? 14 : tab === '02' ? 12.5 : tab === '01' ? 9.5 : 12;
+        const minZoom = tab === '01' ? 6.5 : 7.5;
         map.fitBounds(bounds, {
           padding,
           maxZoom,
+          minZoom,
           duration,
         });
       }
@@ -195,6 +199,10 @@ export default function InvestigationMap({
 
     map.on('load', onStyleReady);
 
+    if (typeof window !== 'undefined') {
+      window._investigationMap = map;
+    }
+
     // Mouseout coordinates clearing
     const onMouseOut = () => setCursorCoords(null);
     map.getCanvas().addEventListener('mouseout', onMouseOut);
@@ -202,6 +210,9 @@ export default function InvestigationMap({
     return () => {
       cleanupInteractions();
       map.getCanvas()?.removeEventListener('mouseout', onMouseOut);
+      if (typeof window !== 'undefined') {
+        delete window._investigationMap;
+      }
       mapReadyRef.current = false;
       map.remove();
       mapRef.current = null;
@@ -256,6 +267,17 @@ export default function InvestigationMap({
     }
   }, [activeTab, visibleLayers, scenarioId, fitCameraToExtent, syncSourceData]);
 
+  // Adjust camera framing smoothly when candidate selection changes in AIS or Fusion
+  useEffect(() => {
+    if (!mapReadyRef.current) return;
+    if (prevCandidateMmsiRef.current !== selectedCandidateMmsi) {
+      prevCandidateMmsiRef.current = selectedCandidateMmsi;
+      if (selectedCandidateMmsi && (activeTab === '05' || activeTab === '06')) {
+        fitCameraToExtent(activeTab, 600);
+      }
+    }
+  }, [selectedCandidateMmsi, activeTab, fitCameraToExtent]);
+
   // Toggle single layer visibility
   const toggleLayer = (layerKey) => {
     setVisibleLayers((prev) => ({ ...prev, [layerKey]: !prev[layerKey] }));
@@ -264,20 +286,20 @@ export default function InvestigationMap({
   // ─── Fallback When Mapbox Token Missing ──────────────────────────────
   if (!isMapboxConfigured()) {
     return (
-      <div className="relative w-full h-full bg-[#0A1118] flex items-center justify-center font-mono select-none">
-        <div className="border border-white/20 bg-[#111111]/95 p-8 max-w-md text-center text-white shadow-2xl">
-          <div className="w-8 h-8 mx-auto mb-3 border-2 border-amber-400 border-dashed rounded-full flex items-center justify-center text-amber-400 font-bold">
+      <div className="relative w-full h-full bg-[#FAFAFA] flex items-center justify-center font-mono select-none border border-[#CCCCCC]">
+        <div className="border border-[#CCCCCC] bg-white p-8 max-w-md text-center text-[#111111] shadow-sm">
+          <div className="w-8 h-8 mx-auto mb-3 border-2 border-amber-500 border-dashed rounded-full flex items-center justify-center text-amber-600 font-bold">
             !
           </div>
-          <div className="text-xs uppercase tracking-wider font-bold mb-2 text-white">
+          <div className="text-xs uppercase tracking-wider font-bold mb-2 text-[#111111]">
             MAPBOX UNAVAILABLE
           </div>
-          <p className="text-[11px] text-[#888888] mb-4 leading-relaxed">
-            Add <code className="text-amber-300 font-bold">VITE_MAPBOX_TOKEN</code> to your{' '}
-            <code className="text-white">.env</code> file to enable the interactive satellite
+          <p className="text-[11px] text-[#666666] mb-4 leading-relaxed">
+            Add <code className="text-amber-700 font-bold">VITE_MAPBOX_TOKEN</code> to your{' '}
+            <code className="text-[#111111] font-bold">.env</code> file to enable the interactive satellite
             investigation map.
           </p>
-          <div className="text-[10px] text-[#666666] border-t border-white/10 pt-3">
+          <div className="text-[10px] text-[#888888] border-t border-[#E5E5E5] pt-3">
             ACTIVE CASE // {scenarioId} · FORENSIC ANALYTICS OPERATIONAL
           </div>
         </div>
@@ -286,29 +308,30 @@ export default function InvestigationMap({
   }
 
   return (
-    <div className="relative w-full h-full bg-[#0A1118] overflow-hidden select-none">
+    <div className="relative w-full h-full bg-[#FAFAFA] overflow-hidden select-none">
       {/* ══ Mapbox DOM Canvas Mount Container ═══════════════════════ */}
       <div ref={mapContainerRef} className="w-full h-full z-0" />
 
-      {/* ══ Top-Left Technical Telemetry HUD ════════════════════════ */}
-      <div className="absolute top-3 left-3 z-30 pointer-events-none flex flex-col gap-1.5 font-mono">
-        <div className="bg-[#111111]/90 backdrop-blur-xs text-white px-3 py-1.5 border border-white/20 shadow-md flex items-center gap-2">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-          <span className="text-[11px] font-bold uppercase tracking-wider">
+      {/* ══ Top-Left Technical Telemetry HUD (Minimal Map Card) ═════ */}
+      <div className="absolute top-3 left-3 z-30 pointer-events-none flex flex-col gap-1 font-mono">
+        <div className="bg-white/95 backdrop-blur-xs text-[#111111] px-3 py-1.5 border border-[#CCCCCC] shadow-xs flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-emerald-600 inline-block flex-shrink-0" />
+          <span className="text-[11px] font-bold uppercase tracking-wider text-[#111111]">
             {scenarioId} · FORENSIC MAP
           </span>
-          <span className="text-white/40">|</span>
-          <span className="text-[10px] text-white/70">WGS 84 · EPSG:4326</span>
-          <span className="text-white/40">|</span>
-          <span className="text-[9px] px-1 py-0.2 uppercase font-bold text-cyan-300">
+          <span className="text-[#CCCCCC]">|</span>
+          <span className="text-[10px] text-[#666666]">WGS 84 · EPSG:4326</span>
+          <span className="text-[#CCCCCC]">|</span>
+          <span className="text-[9px] px-1 py-0.2 uppercase font-bold text-[#0D9488]">
             {basemapMode === BASEMAP_MODES.SATELLITE ? 'SATELLITE' : 'MAP'}
           </span>
         </div>
 
         {/* Live Cursor Coordinates Readout */}
         {cursorCoords && (
-          <div className="bg-white/90 backdrop-blur-xs text-[#111111] px-2.5 py-1 border border-[#CCCCCC] shadow-xs text-[10px]">
-            LAT: {cursorCoords.lat}° N · LON: {cursorCoords.lng}° E
+          <div className="bg-white/95 backdrop-blur-xs text-[#111111] px-2.5 py-1 border border-[#CCCCCC] shadow-xs text-[10px]">
+            LAT <span className="font-semibold text-[#111111]">{cursorCoords.lat}° N</span> · LON{' '}
+            <span className="font-semibold text-[#111111]">{cursorCoords.lng}° E</span>
           </div>
         )}
       </div>
@@ -317,13 +340,13 @@ export default function InvestigationMap({
       <div className="absolute top-3 right-3 z-30 flex flex-col items-end gap-2 font-mono">
         <div className="flex items-center gap-1.5">
           {/* Basemap Mode Switcher: SATELLITE | MAP */}
-          <div className="flex bg-white border border-[#111111] shadow-md overflow-hidden text-[10px] font-bold">
+          <div className="flex bg-white border border-[#CCCCCC] shadow-xs overflow-hidden text-[10px] font-bold">
             <button
               onClick={() => setBasemapMode(BASEMAP_MODES.SATELLITE)}
               className={`px-3 py-1.5 transition-all cursor-pointer ${
                 basemapMode === BASEMAP_MODES.SATELLITE
                   ? 'bg-[#111111] text-white'
-                  : 'bg-white text-[#555555] hover:text-[#111111] hover:bg-[#EEEEEE]'
+                  : 'text-[#666666] hover:text-[#111111] hover:bg-[#F5F5F5]'
               }`}
               title="Switch to High-Resolution Satellite Basemap"
             >
@@ -334,7 +357,7 @@ export default function InvestigationMap({
               className={`px-3 py-1.5 border-l border-[#CCCCCC] transition-all cursor-pointer ${
                 basemapMode === BASEMAP_MODES.MAP
                   ? 'bg-[#111111] text-white'
-                  : 'bg-white text-[#555555] hover:text-[#111111] hover:bg-[#EEEEEE]'
+                  : 'text-[#666666] hover:text-[#111111] hover:bg-[#F5F5F5]'
               }`}
               title="Switch to Nautical Geographic Map"
             >
@@ -346,10 +369,10 @@ export default function InvestigationMap({
           <div className="relative">
             <button
               onClick={() => setLayersMenuOpen(!layersMenuOpen)}
-              className={`px-3 py-1.5 text-[10px] uppercase tracking-wider font-bold border border-[#111111] transition-all shadow-md cursor-pointer flex items-center gap-1.5 ${
+              className={`px-3 py-1.5 text-[10px] uppercase tracking-wider font-bold border border-[#CCCCCC] bg-white transition-all shadow-xs cursor-pointer flex items-center gap-1.5 ${
                 layersMenuOpen
-                  ? 'bg-[#111111] text-white'
-                  : 'bg-white text-[#111111] hover:bg-[#EEEEEE]'
+                  ? 'bg-[#111111] text-white border-[#111111]'
+                  : 'text-[#111111] hover:bg-[#F5F5F5]'
               }`}
             >
               <span>LAYERS</span>
@@ -357,97 +380,97 @@ export default function InvestigationMap({
             </button>
 
             {layersMenuOpen && (
-              <div className="absolute right-0 mt-1.5 w-56 bg-white border-2 border-[#111111] shadow-2xl p-3 space-y-2 text-[10px] uppercase font-bold z-50">
-                <div className="text-[9px] text-[#888888] pb-1 border-b border-[#EAEAEA] tracking-wider">
+              <div className="absolute right-0 mt-1.5 w-56 bg-white border border-[#CCCCCC] shadow-lg p-3 space-y-2 text-[10px] uppercase font-bold z-50 text-[#111111]">
+                <div className="text-[9px] text-[#666666] pb-1 border-b border-[#E5E5E5] tracking-wider">
                   BASEMAP
                 </div>
-                <div className="flex gap-2 pb-2 border-b border-[#EAEAEA]">
+                <div className="flex gap-2 pb-2 border-b border-[#E5E5E5]">
                   <button
                     onClick={() => setBasemapMode(BASEMAP_MODES.SATELLITE)}
-                    className={`flex-1 py-1 text-center border cursor-pointer ${
+                    className={`flex-1 py-1 text-center border cursor-pointer transition-colors ${
                       basemapMode === BASEMAP_MODES.SATELLITE
                         ? 'bg-[#111111] text-white border-[#111111]'
-                        : 'border-[#CCCCCC] text-[#555555]'
+                        : 'border-[#CCCCCC] text-[#666666] hover:text-[#111111] hover:bg-[#F5F5F5]'
                     }`}
                   >
                     Satellite
                   </button>
                   <button
                     onClick={() => setBasemapMode(BASEMAP_MODES.MAP)}
-                    className={`flex-1 py-1 text-center border cursor-pointer ${
+                    className={`flex-1 py-1 text-center border cursor-pointer transition-colors ${
                       basemapMode === BASEMAP_MODES.MAP
                         ? 'bg-[#111111] text-white border-[#111111]'
-                        : 'border-[#CCCCCC] text-[#555555]'
+                        : 'border-[#CCCCCC] text-[#666666] hover:text-[#111111] hover:bg-[#F5F5F5]'
                     }`}
                   >
                     Map
                   </button>
                 </div>
 
-                <div className="text-[9px] text-[#888888] pb-1 border-b border-[#EAEAEA] tracking-wider">
+                <div className="text-[9px] text-[#666666] pb-1 border-b border-[#E5E5E5] tracking-wider">
                   INVESTIGATION LAYERS
                 </div>
 
                 <label className="flex items-center justify-between p-1 hover:bg-[#F5F5F5] cursor-pointer">
-                  <span className="text-[#333333]">SAR FOOTPRINT</span>
+                  <span className="text-[#111111]">SAR FOOTPRINT</span>
                   <input
                     type="checkbox"
                     checked={visibleLayers.sarFootprint}
                     onChange={() => toggleLayer('sarFootprint')}
-                    className="accent-[#111111] cursor-pointer"
+                    className="accent-[#78909C] cursor-pointer"
                   />
                 </label>
 
                 <label className="flex items-center justify-between p-1 hover:bg-[#F5F5F5] cursor-pointer">
-                  <span className="text-[#333333]">
+                  <span className="text-[#111111]">
                     {activeTab === '02' ? 'DETECTED SEGMENTATION' : 'SPILL GEOMETRY'}
                   </span>
                   <input
                     type="checkbox"
                     checked={visibleLayers.spill}
                     onChange={() => toggleLayer('spill')}
-                    className="accent-[#111111] cursor-pointer"
+                    className="accent-[#D32F2F] cursor-pointer"
                   />
                 </label>
 
                 <label className="flex items-center justify-between p-1 hover:bg-[#F5F5F5] cursor-pointer">
-                  <span className="text-[#333333]">DRIFT & ORIGIN</span>
+                  <span className="text-[#111111]">DRIFT & ORIGIN</span>
                   <input
                     type="checkbox"
                     checked={visibleLayers.drift}
                     onChange={() => toggleLayer('drift')}
-                    className="accent-[#111111] cursor-pointer"
+                    className="accent-[#00BFA5] cursor-pointer"
                   />
                 </label>
 
                 <label className="flex items-center justify-between p-1 hover:bg-[#F5F5F5] cursor-pointer">
-                  <span className="text-[#333333]">AIS TRAFFIC</span>
+                  <span className="text-[#111111]">AIS TRAFFIC</span>
                   <input
                     type="checkbox"
                     checked={visibleLayers.ais}
                     onChange={() => toggleLayer('ais')}
-                    className="accent-[#111111] cursor-pointer"
+                    className="accent-[#42A5F5] cursor-pointer"
                   />
                 </label>
 
                 <label className="flex items-center justify-between p-1 hover:bg-[#F5F5F5] cursor-pointer">
-                  <span className="text-[#333333]">METOCEAN VECTORS</span>
+                  <span className="text-[#111111]">METOCEAN VECTORS</span>
                   <input
                     type="checkbox"
                     checked={visibleLayers.metocean}
                     onChange={() => toggleLayer('metocean')}
-                    className="accent-[#111111] cursor-pointer"
+                    className="accent-[#4FC3F7] cursor-pointer"
                   />
                 </label>
 
                 {scenarioId === 'SYN-005' && (
                   <label className="flex items-center justify-between p-1 hover:bg-[#F5F5F5] cursor-pointer">
-                    <span className="text-[#333333]">ENSEMBLE ENVELOPE</span>
+                    <span className="text-[#111111]">ENSEMBLE ENVELOPE</span>
                     <input
                       type="checkbox"
                       checked={visibleLayers.uncertainty}
                       onChange={() => toggleLayer('uncertainty')}
-                      className="accent-[#111111] cursor-pointer"
+                      className="accent-[#CE93D8] cursor-pointer"
                     />
                   </label>
                 )}
@@ -457,17 +480,17 @@ export default function InvestigationMap({
         </div>
 
         {/* Zoom & Fit Controls */}
-        <div className="flex flex-col bg-white border border-[#111111] shadow-md">
+        <div className="flex flex-col bg-white border border-[#CCCCCC] shadow-xs text-[#111111]">
           <button
             onClick={() => mapRef.current?.zoomIn()}
-            className="w-8 h-8 flex items-center justify-center font-bold text-sm text-[#111111] hover:bg-[#F5F5F5] border-b border-[#EAEAEA] cursor-pointer"
+            className="w-8 h-8 flex items-center justify-center font-bold text-sm text-[#111111] hover:bg-[#F5F5F5] border-b border-[#E5E5E5] cursor-pointer"
             title="Zoom In"
           >
             +
           </button>
           <button
             onClick={() => mapRef.current?.zoomOut()}
-            className="w-8 h-8 flex items-center justify-center font-bold text-sm text-[#111111] hover:bg-[#F5F5F5] border-b border-[#EAEAEA] cursor-pointer"
+            className="w-8 h-8 flex items-center justify-center font-bold text-sm text-[#111111] hover:bg-[#F5F5F5] border-b border-[#E5E5E5] cursor-pointer"
             title="Zoom Out"
           >
             −
@@ -482,182 +505,202 @@ export default function InvestigationMap({
         </div>
       </div>
 
-      {/* ══ Bottom-Left Contextual Legend HUD ════════════════════════ */}
+      {/* ══ Bottom-Left Contextual Legend HUD (Light, Compact, Stage-Aware) ═ */}
       <div className="absolute bottom-3 left-3 z-30 pointer-events-none font-mono">
-        <div className="bg-white/95 backdrop-blur-xs border border-[#111111] p-2.5 shadow-md max-w-sm">
-          <div className="text-[9px] uppercase tracking-wider font-bold text-[#888888] mb-1.5 flex items-center justify-between">
+        <div className="bg-white/95 backdrop-blur-xs border border-[#CCCCCC] p-2.5 shadow-sm max-w-sm text-[#111111]">
+          <div className="text-[9px] uppercase tracking-wider font-bold text-[#666666] mb-1.5 flex items-center justify-between">
             <span>
               {activeTab === '01'
-                ? 'ARCHIVE & INTAKE CONTEXT'
+                ? 'ARCHIVE CONTEXT'
                 : activeTab === '02'
-                ? 'SEGMENTATION CLASSIFICATION'
+                ? 'DETECTED SEGMENTATION'
                 : activeTab === '03'
-                ? 'SLICK MORPHOLOGY AXES'
+                ? 'SLICK MORPHOLOGY'
                 : activeTab === '04'
                 ? 'DRIFT & ORIGIN DYNAMICS'
                 : activeTab === '05'
                 ? 'AIS MARITIME TRAFFIC'
                 : activeTab === '06'
-                ? 'EVIDENCE FUSION & ATTRIBUTION'
+                ? 'EVIDENCE FUSION'
                 : 'CONSOLIDATED INVESTIGATION'}
             </span>
-            <span className="text-[8px] text-[#666666]">STAGE {activeTab}</span>
+            <span className="text-[8px] text-[#888888]">TAB {activeTab}</span>
           </div>
 
           {activeTab === '01' ? (
             /* Tab 01 Archive Legend */
-            <div className="space-y-1 text-[9px] text-[#333333]">
+            <div className="space-y-1 text-[9px] text-[#111111]">
               <div className="flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-white border-2 border-[#111111]" />
-                <span>INCIDENT LOCATION</span>
-                <span className="text-gray-300">|</span>
-                <span className="w-4 h-0.5 border-b border-dashed border-[#111111]" />
-                <span>SAR SWATH EXTENT</span>
+                <span>INCIDENT</span>
+                <span className="text-[#CCCCCC]">|</span>
+                <span className="w-2.5 h-2.5 bg-[#C62828] border border-white" />
+                <span>RAW OBSERVATION</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="w-4 h-0.5 border-b border-dashed border-[#78909C]" />
+                <span>SAR SWATH</span>
+                <span className="text-[#CCCCCC]">|</span>
+                <span className="w-2 h-3 border border-[#0F172A] bg-white inline-block" />
+                <span>VESSEL SILHOUETTE</span>
               </div>
             </div>
           ) : activeTab === '02' ? (
             /* Tab 02 Semantic Classification Legend */
             <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[9px] text-[#111111]">
               <div className="flex items-center gap-1.5">
-                <span className="w-2.5 h-2.5 bg-[#DC2626] border border-[#B91C1C]" />
-                <span>OIL SLICK</span>
+                <span className="w-2.5 h-2.5 bg-[#C62828] border border-white" />
+                <span>CONFIRMED SLICK</span>
               </div>
               <div className="flex items-center gap-1.5">
                 <span className="w-2.5 h-2.5 bg-[#2563EB] border border-[#1D4ED8]" />
                 <span>LOOK-ALIKE</span>
               </div>
               <div className="flex items-center gap-1.5">
-                <span className="w-2.5 h-2.5 bg-[#D97706] border border-[#B45309]" />
+                <span className="w-2.5 h-2.5 bg-[#F59E0B] border border-[#D97706]" />
                 <span>SHIP WAKE</span>
               </div>
               <div className="flex items-center gap-1.5">
-                <span className="w-2.5 h-2.5 bg-[#059669] border border-[#047857]" />
+                <span className="w-2.5 h-2.5 bg-[#10B981] border border-[#047857]" />
                 <span>LOW-WIND CALM</span>
               </div>
             </div>
           ) : activeTab === '03' ? (
             /* Tab 03 Slick Morphology Legend */
-            <div className="space-y-1 text-[9px] text-[#333333]">
+            <div className="space-y-1 text-[9px] text-[#111111]">
               <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-[#111111] border border-white" />
+                <span className="w-2.5 h-2.5 bg-[#C62828] border border-white" />
                 <span>OBSERVED SLICK</span>
-                <span className="text-gray-300">|</span>
-                <span className="w-4 h-0.5 bg-[#111111]" />
+                <span className="text-[#CCCCCC]">|</span>
+                <span className="w-4 h-0.5 bg-white border border-[#999999]" />
                 <span>MAJOR AXIS</span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="w-4 h-0.5 border-b border-dashed border-[#888888]" />
+                <span className="w-4 h-0.5 border-b border-dashed border-[#FFCDD2]" />
                 <span>MINOR AXIS</span>
-                <span className="text-gray-300">|</span>
-                <span className="w-2.5 h-2.5 rounded-full bg-[#111111] border-2 border-white" />
+                <span className="text-[#CCCCCC]">|</span>
+                <span className="w-2.5 h-2.5 rounded-full bg-white border-2 border-[#111111]" />
                 <span>CENTROID</span>
               </div>
             </div>
           ) : activeTab === '04' ? (
-            /* Tab 04 Drift & Origin Legend */
-            <div className="space-y-1 text-[9px] text-[#333333]">
-              <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-[#111111] border border-white" />
-                <span>OBSERVED SLICK</span>
-                <span className="text-gray-300">|</span>
-                <span className="w-2.5 h-2.5 rounded-full bg-[#22C55E] border-2 border-[#FFFFFF]" />
-                <span>RECONSTRUCTED ORIGIN</span>
+            /* Tab 04 Drift & Origin Dynamics HUD (matches reference media_1790133562224.jpg) */
+            <div className="space-y-1.5 text-[9px] text-[#111111]">
+              <div className="pb-1 border-b border-[#EAEAEA] space-y-0.5 text-[8.5px] font-mono text-[#333333]">
+                <div>
+                  <span className="text-[#888888]">REPRESENTATIVE DRIFT: </span>
+                  <strong className="text-[#111111]">
+                    {(drift?.driftDistanceNm || 16.8).toFixed(1)} NM @ {Math.round(calculateBearingDeg(scenario?.spill?.centroid, drift?.originCentroid) || 245)}°
+                  </strong>
+                </div>
+                <div>
+                  <span className="text-[#888888]">ORIGIN UNCERTAINTY: </span>
+                  <strong className="text-[#111111]">
+                    {(drift?.originUncertaintyKm2 || (Math.PI * Math.pow(drift?.originRadiusKm || 2.8, 2))).toFixed(1)} KM² (95% CI)
+                  </strong>
+                </div>
+                <div>
+                  <span className="text-[#888888]">METOCEAN VECTOR: </span>
+                  <strong className="text-[#111111]">
+                    WIND {drift?.forcing?.windSpeedKn || scenario?.forcing?.windSpeedKn || 14.2} KN @ {scenario?.forcing?.windDirectionDeg || 65}° · CURRENT {drift?.forcing?.currentSpeedMs || scenario?.forcing?.currentSpeedMs || 0.38} M/S @ {scenario?.forcing?.currentDirectionDeg || 210}°
+                  </strong>
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                <span className="w-4 h-0.5 border-b border-dashed border-[#3B82F6]" />
-                <span>BACKWARD DRIFT</span>
-                <span className="text-gray-300">|</span>
-                <span className="text-[#9CA3AF] font-bold">↑</span>
-                <span>WIND</span>
-                <span className="text-gray-300">·</span>
-                <span className="text-[#60A5FA] font-bold">→</span>
-                <span>CURRENT</span>
+              <div className="grid grid-cols-2 gap-x-2 gap-y-1 text-[8.5px]">
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 bg-[#C62828] border border-white" />
+                  <span>OBSERVED SLICK T0</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="w-4 h-0.5 border-b border-dashed border-[#00BFA5]" />
+                  <span>BACKWARD ENSEMBLE</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-full bg-[#00E676] border-2 border-white" />
+                  <span>ORIGIN (50/75/95%)</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="w-4 h-0.5 border-b border-dashed border-[#4FC3F7]" />
+                  <span>FORECAST +6h</span>
+                </div>
               </div>
               {scenarioId === 'SYN-005' && (
-                <div className="flex items-center gap-2 text-[8px] text-[#2563EB]">
-                  <span className="w-4 h-0.5 border-b border-dotted border-[#2563EB]" />
-                  <span>50-MEMBER ENSEMBLE DISPERSION</span>
+                <div className="pt-1 border-t border-[#EAEAEA] flex items-center gap-2 text-[8px] text-[#8E24AA]">
+                  <span className="w-4 h-0.5 border-b border-dotted border-[#CE93D8]" />
+                  <span>MULTI-MEMBER ENSEMBLE PERTURBATIONS ACTIVE</span>
                 </div>
               )}
             </div>
           ) : activeTab === '05' ? (
             /* Tab 05 AIS Traffic Legend */
-            <div className="space-y-1 text-[9px] text-[#333333]">
+            <div className="space-y-1 text-[9px] text-[#111111]">
               <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-[#111111] border border-white" />
+                <span className="w-2.5 h-2.5 bg-[#C62828] border border-white" />
                 <span>OBSERVED SLICK</span>
-                <span className="text-gray-300">|</span>
-                <span className="w-2.5 h-2.5 rounded-full bg-[#22C55E] border-2 border-[#FFFFFF]" />
-                <span>RECONSTRUCTED ORIGIN</span>
+                <span className="text-[#CCCCCC]">|</span>
+                <span className="w-2.5 h-2.5 rounded-full bg-[#00BFA5] border-2 border-white" />
+                <span>ORIGIN</span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="w-4 h-0.5 bg-[#94A3B8]" />
-                <span>AIS VESSEL TRACK</span>
-                <span className="text-gray-300">|</span>
-                <span className="w-2 h-2 rounded-full bg-[#3B82F6]" />
-                <span>VESSEL CONTACT</span>
+                <span className="w-4 h-0.5 bg-[#42A5F5]" />
+                <span>AIS TRACK</span>
+                <span className="text-[#CCCCCC]">|</span>
+                <span className="w-2 h-3 border border-[#0F172A] bg-white inline-block" />
+                <span>VESSEL SILHOUETTE</span>
               </div>
               {scenarioId === 'SYN-003' && (
-                <div className="flex items-center gap-2 text-[8px] text-[#EF4444]">
-                  <span className="w-4 h-0.5 border-b border-dashed border-[#EF4444]" />
+                <div className="flex items-center gap-2 text-[8px] text-[#D32F2F]">
+                  <span className="w-4 h-0.5 border-b border-dashed border-[#FF5252]" />
                   <span>TRANSPONDER GAP (3.5h)</span>
                 </div>
               )}
             </div>
           ) : activeTab === '06' ? (
             /* Tab 06 Evidence Fusion Legend */
-            <div className="space-y-1 text-[9px] text-[#333333]">
+            <div className="space-y-1 text-[9px] text-[#111111]">
               <div className="flex items-center gap-2">
-                <span className="w-4 h-0.5 bg-[#FACC15]" />
+                <span className="w-4 h-0.5 bg-[#FFD54F] border-b border-[#0F172A]" />
                 <span>CANDIDATE TRACK</span>
-                <span className="text-gray-300">|</span>
-                <span className="w-4 h-0.5 border-b border-dashed border-[#EF4444]" />
+                <span className="text-[#CCCCCC]">|</span>
+                <span className="w-4 h-0.5 border-b border-dashed border-[#FF5252]" />
                 <span>CPA TIE-LINE</span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-[#22C55E] border-2 border-[#FFFFFF]" />
+                <span className="w-2 h-3 border border-[#0F172A] bg-[#FFD54F] inline-block" />
+                <span>CANDIDATE SHIP</span>
+                <span className="text-[#CCCCCC]">|</span>
+                <span className="w-2.5 h-2.5 rounded-full bg-[#00BFA5] border-2 border-white" />
                 <span>ORIGIN</span>
-                <span className="text-gray-300">|</span>
-                <span className="w-4 h-0.5 border-b border-dashed border-[#3B82F6]" />
-                <span>BACKWARD DRIFT</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-[#9CA3AF] font-bold">↑</span>
-                <span>WIND FORCING</span>
-                <span className="text-gray-300">|</span>
-                <span className="text-[#60A5FA] font-bold">→</span>
-                <span>OCEAN CURRENT</span>
               </div>
             </div>
           ) : (
             /* Tab 07 Dossier Report Legend */
-            <div className="space-y-1 text-[9px] text-[#333333]">
+            <div className="space-y-1 text-[9px] text-[#111111]">
               <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-[#111111] border border-white" />
-                <span>OBSERVED SLICK</span>
-                <span className="text-gray-300">|</span>
-                <span className="w-2.5 h-2.5 rounded-full bg-[#22C55E] border-2 border-[#FFFFFF]" />
-                <span>RECONSTRUCTED ORIGIN</span>
+                <span className="w-2.5 h-2.5 bg-[#C62828] border border-white" />
+                <span>SLICK</span>
+                <span className="text-[#CCCCCC]">|</span>
+                <span className="w-2.5 h-2.5 rounded-full bg-[#00BFA5] border-2 border-white" />
+                <span>ORIGIN</span>
+                <span className="text-[#CCCCCC]">|</span>
+                <span className="w-2 h-3 border border-[#0F172A] bg-[#FFD54F] inline-block" />
+                <span>CANDIDATE SHIP</span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="w-4 h-0.5 bg-[#FACC15]" />
-                <span>CANDIDATE TRACK</span>
-                <span className="text-gray-300">|</span>
-                <span className="w-4 h-0.5 border-b border-dashed border-[#3B82F6]" />
-                <span>BACKWARD DRIFT</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-[#9CA3AF] font-bold">↑</span>
-                <span>WIND FORCING</span>
-                <span className="text-gray-300">|</span>
-                <span className="text-[#60A5FA] font-bold">→</span>
-                <span>OCEAN CURRENT</span>
+                <span className="w-4 h-0.5 bg-[#FFD54F]" />
+                <span>TRACK</span>
+                <span className="text-[#CCCCCC]">|</span>
+                <span className="w-4 h-0.5 border-b border-dashed border-[#00BFA5]" />
+                <span>DRIFT</span>
+                <span className="text-[#CCCCCC]">|</span>
+                <span className="w-4 h-0.5 border-b border-dashed border-[#FF5252]" />
+                <span>CPA</span>
               </div>
             </div>
           )}
 
           {scenarioId === 'SYN-004' && activeTab >= '06' && (
-            <div className="mt-2 pt-1.5 border-t border-[#EAEAEA] text-[8px] text-[#DC2626] font-bold uppercase">
+            <div className="mt-2 pt-1.5 border-t border-[#E5E5E5] text-[8px] text-[#D32F2F] font-bold uppercase">
               ATTRIBUTION ABSTENTION: Zero candidate vessels fabricated.
             </div>
           )}
@@ -666,7 +709,7 @@ export default function InvestigationMap({
 
       {/* ══ Bottom-Right Attribution HUD ═════════════════════════════ */}
       <div className="absolute bottom-2 right-2 z-30 pointer-events-none flex flex-col items-end gap-1 font-mono text-[9px] text-[#666666]">
-        <div className="bg-white/90 backdrop-blur-xs px-2.5 py-0.5 border border-[#CCCCCC] shadow-2xs">
+        <div className="bg-white/90 backdrop-blur-xs px-2.5 py-0.5 border border-[#CCCCCC] shadow-xs">
           <span>Mapbox · OpenStreetMap contributors · WGS 84</span>
         </div>
       </div>

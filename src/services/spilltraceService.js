@@ -359,8 +359,8 @@ export function runAisTrafficStage(driftOutput, archiveOutput) {
       isTemporalMatch = deltaHours <= 2.5; // Within ±2.5h of center
     }
 
-    // Evaluate spatial proximity to origin
-    const isSpatialMatch = minDistanceNm <= (originRadiusNm * 1.6);
+    // Evaluate spatial proximity to origin (within 2.5x origin radius envelope)
+    const isSpatialMatch = minDistanceNm <= (originRadiusNm * 2.5);
 
     if (!isSyn004) {
       if (isTemporalMatch) temporalMatches++;

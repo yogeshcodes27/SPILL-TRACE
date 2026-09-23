@@ -272,7 +272,7 @@ export default function IncidentMap({
         if (normalData) map.addImage('vessel-normal', normalData, { pixelRatio: 1 });
       }
       if (!map.hasImage('vessel-selected')) {
-        const selectedData = createVesselCanvas('#FACC15', '#000000', true);
+        const selectedData = createVesselCanvas('#FFD54F', '#000000', true);
         if (selectedData) map.addImage('vessel-selected', selectedData, { pixelRatio: 1 });
       }
     };
@@ -300,7 +300,7 @@ export default function IncidentMap({
         type: 'fill',
         filter: ['==', ['get', 'type'], 'sar-bbox'],
         paint: {
-          'fill-color': '#0284C7',
+          'fill-color': '#78909C',
           'fill-opacity': 0.04,
         },
       });
@@ -310,9 +310,9 @@ export default function IncidentMap({
         type: 'line',
         filter: ['==', ['get', 'type'], 'sar-bbox'],
         paint: {
-          'line-color': '#64748B',
-          'line-width': 1,
-          'line-dasharray': [4, 4],
+          'line-color': '#78909C',
+          'line-width': 1.5,
+          'line-dasharray': [6, 4],
         },
       });
       map.addLayer({
@@ -328,9 +328,9 @@ export default function IncidentMap({
           'text-anchor': 'top-left',
         },
         paint: {
-          'text-color': '#94A3B8',
-          'text-halo-color': '#000000',
-          'text-halo-width': 1,
+          'text-color': '#B0BEC5',
+          'text-halo-color': '#0A1118',
+          'text-halo-width': 2.0,
         },
       });
 
@@ -341,8 +341,8 @@ export default function IncidentMap({
         type: 'fill',
         filter: ['==', ['get', 'type'], 'observation-polygon'],
         paint: {
-          'fill-color': '#020617',
-          'fill-opacity': 0.45,
+          'fill-color': '#D32F2F',
+          'fill-opacity': 0.35,
         },
       });
       map.addLayer({
@@ -352,7 +352,7 @@ export default function IncidentMap({
         filter: ['==', ['get', 'type'], 'observation-polygon'],
         paint: {
           'line-color': '#FFFFFF',
-          'line-width': 1.5,
+          'line-width': 2.0,
         },
       });
       map.addLayer({
@@ -361,10 +361,10 @@ export default function IncidentMap({
         type: 'circle',
         filter: ['==', ['get', 'type'], 'observation-centroid'],
         paint: {
-          'circle-radius': 4,
-          'circle-color': '#FFFFFF',
-          'circle-stroke-color': '#111111',
-          'circle-stroke-width': 1.5,
+          'circle-radius': 5,
+          'circle-color': '#D32F2F',
+          'circle-stroke-color': '#FFFFFF',
+          'circle-stroke-width': 2,
         },
       });
       map.addLayer({
@@ -381,8 +381,8 @@ export default function IncidentMap({
         },
         paint: {
           'text-color': '#FFFFFF',
-          'text-halo-color': '#111111',
-          'text-halo-width': 1.2,
+          'text-halo-color': '#0A1118',
+          'text-halo-width': 2.2,
         },
       });
 
@@ -394,21 +394,21 @@ export default function IncidentMap({
         paint: {
           'line-color': [
             'case',
-            ['==', ['get', 'mmsi'], selectedVesselMmsi || ''],
-            '#FACC15',
-            '#94A3B8',
+            ['==', ['to-string', ['get', 'mmsi']], String(selectedVesselMmsi || '')],
+            '#FFD54F',
+            '#42A5F5',
           ],
           'line-width': [
             'case',
-            ['==', ['get', 'mmsi'], selectedVesselMmsi || ''],
-            3,
-            1.5,
+            ['==', ['to-string', ['get', 'mmsi']], String(selectedVesselMmsi || '')],
+            3.5,
+            1.8,
           ],
           'line-opacity': [
             'case',
-            ['==', ['get', 'mmsi'], selectedVesselMmsi || ''],
-            1,
-            0.6,
+            ['==', ['to-string', ['get', 'mmsi']], String(selectedVesselMmsi || '')],
+            1.0,
+            0.65,
           ],
         },
       });
@@ -420,10 +420,10 @@ export default function IncidentMap({
         type: 'line',
         filter: ['==', ['get', 'type'], 'ais-gap'],
         paint: {
-          'line-color': '#EF4444',
-          'line-width': 2,
-          'line-dasharray': [2, 4],
-          'line-opacity': 0.85,
+          'line-color': '#FF5252',
+          'line-width': 3,
+          'line-dasharray': [4, 4],
+          'line-opacity': 0.95,
         },
       });
       map.addLayer({
@@ -438,9 +438,9 @@ export default function IncidentMap({
           'text-allow-overlap': true,
         },
         paint: {
-          'text-color': '#EF4444',
-          'text-halo-color': '#000000',
-          'text-halo-width': 1,
+          'text-color': '#FF5252',
+          'text-halo-color': '#0A1118',
+          'text-halo-width': 2.2,
         },
       });
 
@@ -494,7 +494,7 @@ export default function IncidentMap({
             '#F97316',
             '#FFFFFF',
           ],
-          'circle-stroke-color': '#111111',
+          'circle-stroke-color': '#0A1118',
           'circle-stroke-width': 2,
           'circle-opacity': 0.95,
         },
@@ -506,15 +506,16 @@ export default function IncidentMap({
         layout: {
           'text-field': ['get', 'code'],
           'text-font': ['DIN Pro Medium', 'Arial Unicode MS Regular'],
-          'text-size': 10,
+          'text-size': 9.5,
           'text-offset': [0, -1.4],
           'text-anchor': 'bottom',
-          'text-allow-overlap': true,
+          'text-allow-overlap': false,
+          'text-optional': true,
         },
         paint: {
           'text-color': '#FFFFFF',
-          'text-halo-color': '#111111',
-          'text-halo-width': 1.2,
+          'text-halo-color': '#0A1118',
+          'text-halo-width': 2.0,
         },
       });
 
@@ -711,20 +712,20 @@ export default function IncidentMap({
       map.setPaintProperty('ais-tracks-line', 'line-color', [
         'case',
         ['==', ['to-string', ['get', 'mmsi']], mmsiStr],
-        '#FACC15',
-        '#94A3B8',
+        '#FFD54F',
+        '#42A5F5',
       ]);
       map.setPaintProperty('ais-tracks-line', 'line-width', [
         'case',
         ['==', ['to-string', ['get', 'mmsi']], mmsiStr],
-        3,
-        1.5,
+        3.5,
+        1.8,
       ]);
       map.setPaintProperty('ais-tracks-line', 'line-opacity', [
         'case',
         ['==', ['to-string', ['get', 'mmsi']], mmsiStr],
-        1,
-        0.6,
+        1.0,
+        0.65,
       ]);
     }
 
@@ -807,11 +808,11 @@ export default function IncidentMap({
   }
 
   return (
-    <div className="border border-[#E5E5E5] bg-[#0A0B0D] font-mono text-xs mb-12 relative overflow-hidden shadow-2xs">
+    <div id="incident-map-card" className="border border-[#CCCCCC] bg-[#FAFAFA] font-mono text-xs mb-12 relative overflow-hidden shadow-xs">
       {/* Map top bar */}
-      <div className="bg-[#FAFAFA] border-b border-[#E5E5E5] px-4 py-2 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-[11px] z-10 relative">
+      <div className="bg-white border-b border-[#CCCCCC] px-4 py-2.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-[11px] z-10 relative text-[#111111]">
         <div className="flex items-center gap-2.5 flex-wrap">
-          <span className="w-2 h-2 bg-[#111111] inline-block flex-shrink-0" />
+          <span className="w-2 h-2 bg-emerald-600 inline-block flex-shrink-0 rounded-full" />
           <span className="font-bold text-[#111111] uppercase tracking-wider">
             GEOSPATIAL INCIDENT BROWSER
           </span>
@@ -822,7 +823,7 @@ export default function IncidentMap({
           {selectedIncidentId && (
             <>
               <span className="text-[#CCCCCC] hidden lg:inline">|</span>
-              <span className="text-[#888888] hidden lg:inline text-[10px]">
+              <span className="text-[#B45309] hidden lg:inline text-[10px] font-bold">
                 {selectedIncidentId}
                 {scenario ? ` [${scenario.id}]` : ' [ARCHIVE RECORD ONLY]'}
               </span>
@@ -832,7 +833,7 @@ export default function IncidentMap({
         <div className="flex items-center gap-2">
           <button
             onClick={handleFit}
-            className="px-2 py-1 hover:bg-[#F0F0F0] text-[#555555] hover:text-[#111111] text-[10px] uppercase font-semibold cursor-pointer border border-[#D5D5D5] bg-white"
+            className="px-2.5 py-1 hover:bg-[#F5F5F5] text-[#111111] text-[10px] uppercase font-semibold cursor-pointer border border-[#CCCCCC] bg-white transition-colors"
             title="Fit to incident bounds"
           >
             FIT
@@ -840,34 +841,36 @@ export default function IncidentMap({
           <div className="relative">
             <button
               onClick={() => setLayerControlOpen(!layerControlOpen)}
-              className="px-2 py-1 hover:bg-[#F0F0F0] text-[#555555] hover:text-[#111111] text-[10px] uppercase font-semibold cursor-pointer border border-[#D5D5D5] bg-white"
+              className="px-2.5 py-1 hover:bg-[#F5F5F5] text-[#111111] text-[10px] uppercase font-semibold cursor-pointer border border-[#CCCCCC] bg-white transition-colors flex items-center gap-1.5"
               title="Toggle layer visibility"
             >
-              LAYERS
+              <span>LAYERS</span>
+              <span className="text-[8px]">{layerControlOpen ? '▲' : '▼'}</span>
             </button>
             {layerControlOpen && (
-              <div className="absolute right-0 top-full mt-1 bg-white border border-[#E5E5E5] shadow-lg z-20 w-48">
+              <div className="absolute right-0 top-full mt-1.5 bg-white border border-[#CCCCCC] shadow-lg z-20 w-48 text-[#111111] p-1.5">
                 {[
-                  { key: 'sar', label: 'SAR SWATH', available: availableLayers.sar },
-                  { key: 'observation', label: 'RAW OBSERVATION', available: availableLayers.observation },
-                  { key: 'ais', label: 'AIS TRACKS', available: availableLayers.ais },
-                  { key: 'aisGap', label: 'AIS GAP', available: availableLayers.aisGap },
-                  { key: 'vessels', label: 'VESSELS', available: availableLayers.vessels },
+                  { key: 'sar', label: 'SAR SWATH', color: '#78909C', available: availableLayers.sar },
+                  { key: 'observation', label: 'RAW OBSERVATION', color: '#D32F2F', available: availableLayers.observation },
+                  { key: 'ais', label: 'AIS TRACKS', color: '#42A5F5', available: availableLayers.ais },
+                  { key: 'aisGap', label: 'AIS GAP', color: '#FF5252', available: availableLayers.aisGap },
+                  { key: 'vessels', label: 'VESSELS', color: '#FFD54F', available: availableLayers.vessels },
                 ]
                   .filter((l) => l.available)
                   .map((l) => (
                     <button
                       key={l.key}
                       onClick={() => toggleLayer(l.key)}
-                      className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-[#F5F5F5] text-[10px] uppercase font-semibold cursor-pointer"
+                      className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-[#F5F5F5] text-[10px] uppercase font-semibold cursor-pointer transition-colors"
                     >
-                      <span className={layerVisibility[l.key] ? 'text-[#111111]' : 'text-[#AAAAAA]'}>
+                      <span className={layerVisibility[l.key] ? 'text-[#111111]' : 'text-[#888888]'}>
                         {l.label}
                       </span>
                       <span
-                        className={`w-2 h-2 rounded-full ${
-                          layerVisibility[l.key] ? 'bg-[#111111]' : 'bg-[#DDDDDD]'
-                        }`}
+                        className="w-2.5 h-2.5 rounded-full transition-all border border-[#CCCCCC]"
+                        style={{
+                          backgroundColor: layerVisibility[l.key] ? l.color : '#E5E5E5',
+                        }}
                       />
                     </button>
                   ))}

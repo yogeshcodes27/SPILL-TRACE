@@ -28,10 +28,125 @@ export const SOURCES = {
 const EMPTY_FC = { type: 'FeatureCollection', features: [] };
 
 /**
+ * Generate a crisp 32x32 ImageData with a professional top-down maritime vessel silhouette.
+ * Hull points North (0° / top) so it can be dynamically oriented by COG in Mapbox symbol layer.
+ */
+export function createVesselCanvas(fillColor, strokeColor, isSelected) {
+  const size = 32;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  if (!ctx) return null;
+
+  ctx.clearRect(0, 0, size, size);
+
+  // Subtle contrasting halo/shadow so it remains clearly visible over satellite basemap
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.85)';
+  ctx.shadowBlur = isSelected ? 4 : 2.5;
+  ctx.shadowOffsetY = 1;
+
+  // Streamlined top-down vessel hull pointed North (0°)
+  ctx.beginPath();
+  ctx.moveTo(16, 3); // Bow tip
+  // Starboard curve
+  ctx.bezierCurveTo(19.5, 7, 21.5, 11.5, 21.5, 16);
+  ctx.lineTo(21.5, 22.5);
+  ctx.quadraticCurveTo(21.5, 26.5, 18.5, 27); // Starboard quarter
+  // Transom stern
+  ctx.lineTo(13.5, 27);
+  // Port quarter
+  ctx.quadraticCurveTo(10.5, 26.5, 10.5, 22.5);
+  ctx.lineTo(10.5, 16);
+  ctx.bezierCurveTo(10.5, 11.5, 12.5, 7, 16, 3);
+  ctx.closePath();
+
+  ctx.fillStyle = fillColor;
+  ctx.fill();
+
+  ctx.lineWidth = isSelected ? 2.2 : 1.6;
+  ctx.strokeStyle = strokeColor;
+  ctx.lineJoin = 'round';
+  ctx.stroke();
+
+  // Reset shadow for bridge deckhouse
+  ctx.shadowColor = 'transparent';
+  ctx.shadowBlur = 0;
+  ctx.shadowOffsetY = 0;
+
+  // Bridge / Wheelhouse
+  ctx.fillStyle = isSelected ? '#B45309' : '#334155';
+  ctx.fillRect(13.5, 18, 5, 4.5);
+  ctx.strokeStyle = isSelected ? '#78350F' : '#0F172A';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(13.5, 18, 5, 4.5);
+
+  // Radar mast dot
+  ctx.fillStyle = isSelected ? '#FEF08A' : '#E2E8F0';
+  ctx.beginPath();
+  ctx.arc(16, 14, 1.2, 0, Math.PI * 2);
+  ctx.fill();
+
+  return ctx.getImageData(0, 0, size, size);
+}
+
+/**
+ * Register vessel-normal and vessel-selected images onto a Mapbox map instance.
+ * Provides instant crisp procedural fallback, immediately supplemented by authentic
+ * high-resolution 3D rendered maritime vessel textures with dynamic COG alignment.
+ */
+export function registerVesselImages(map) {
+  if (!map) return;
+
+  // 1. Instant synchronous procedural baseline
+  if (!map.hasImage('vessel-normal')) {
+    const normalData = createVesselCanvas('#FFFFFF', '#0F172A', false);
+    if (normalData) map.addImage('vessel-normal', normalData, { pixelRatio: 1 });
+  }
+  if (!map.hasImage('vessel-selected')) {
+    const selectedData = createVesselCanvas('#FFD54F', '#000000', true);
+    if (selectedData) map.addImage('vessel-selected', selectedData, { pixelRatio: 1 });
+  }
+
+  // 2. Load authentic high-resolution 3D vessel models with drop shadow and tactical selection aura
+  if (typeof window !== 'undefined' && map.loadImage) {
+    map.loadImage('/images/vessel_3d_normal.png', (err, img) => {
+      if (!err && img && map.getSource) {
+        if (map.hasImage('vessel-normal')) {
+          map.removeImage('vessel-normal');
+        }
+        map.addImage('vessel-normal', img, { pixelRatio: 2 });
+      }
+    });
+
+    map.loadImage('/images/vessel_3d_selected.png', (err, img) => {
+      if (!err && img && map.getSource) {
+        if (map.hasImage('vessel-selected')) {
+          map.removeImage('vessel-selected');
+        }
+        map.addImage('vessel-selected', img, { pixelRatio: 2 });
+      }
+    });
+  }
+}
+
+/**
  * Register all 13 GeoJSON sources and their forensic layers on the Mapbox instance.
  * Must be called once on map 'load' event.
  */
 export function registerInvestigationLayers(map) {
+  // Ensure top-down ship silhouette images are registered
+  registerVesselImages(map);
+
+  if (!map._vesselImageListenerAdded) {
+    map._vesselImageListenerAdded = true;
+    map.on('styleimagemissing', (e) => {
+      if (e.id === 'vessel-normal' || e.id === 'vessel-selected') {
+        registerVesselImages(map);
+      }
+    });
+  }
+
   // 1. Register Sources (with empty GeoJSON initially)
   Object.values(SOURCES).forEach((sourceId) => {
     if (!map.getSource(sourceId)) {
@@ -50,7 +165,7 @@ export function registerInvestigationLayers(map) {
       filter: ['==', ['get', 'type'], 'sar-bbox'],
       slot,
       paint: {
-        'fill-color': '#FFFFFF',
+        'fill-color': '#78909C',
         'fill-opacity': 0.04,
       },
     });
@@ -63,9 +178,9 @@ export function registerInvestigationLayers(map) {
       filter: ['==', ['get', 'type'], 'sar-bbox'],
       slot,
       paint: {
-        'line-color': '#FFFFFF',
+        'line-color': '#78909C',
         'line-width': 1.5,
-        'line-dasharray': [4, 3],
+        'line-dasharray': [6, 4],
       },
     });
   }
@@ -78,7 +193,7 @@ export function registerInvestigationLayers(map) {
       slot,
       paint: {
         'circle-radius': 3,
-        'circle-color': '#FFFFFF',
+        'circle-color': '#78909C',
       },
     });
   }
@@ -94,12 +209,13 @@ export function registerInvestigationLayers(map) {
         'text-size': 9,
         'text-anchor': 'bottom-left',
         'text-offset': [0.6, -0.4],
-        'text-allow-overlap': true,
+        'text-allow-overlap': false,
+        'text-optional': true,
       },
       paint: {
-        'text-color': '#FFFFFF',
-        'text-halo-color': '#111111',
-        'text-halo-width': 1.2,
+        'text-color': '#B0BEC5',
+        'text-halo-color': '#0A1118',
+        'text-halo-width': 2.0,
       },
     });
   }
@@ -139,7 +255,7 @@ export function registerInvestigationLayers(map) {
       filter: ['==', ['get', 'type'], 'segmentation-centroid'],
       slot,
       paint: {
-        'circle-radius': 4,
+        'circle-radius': 4.5,
         'circle-color': ['get', 'strokeColor'],
         'circle-stroke-color': '#FFFFFF',
         'circle-stroke-width': 1.5,
@@ -155,14 +271,15 @@ export function registerInvestigationLayers(map) {
       slot,
       layout: {
         'text-field': ['get', 'label'],
-        'text-size': 10,
-        'text-offset': [0, -1.2],
-        'text-allow-overlap': true,
+        'text-size': 9.5,
+        'text-offset': [0, -1.3],
+        'text-allow-overlap': false,
+        'text-optional': true,
       },
       paint: {
         'text-color': '#FFFFFF',
-        'text-halo-color': '#111111',
-        'text-halo-width': 1.5,
+        'text-halo-color': '#0A1118',
+        'text-halo-width': 2.2,
       },
     });
   }
@@ -176,8 +293,8 @@ export function registerInvestigationLayers(map) {
       filter: ['==', ['get', 'type'], 'ensemble-envelope'],
       slot,
       paint: {
-        'fill-color': '#EF4444',
-        'fill-opacity': 0.08,
+        'fill-color': '#CE93D8',
+        'fill-opacity': 0.12,
       },
     });
   }
@@ -189,9 +306,9 @@ export function registerInvestigationLayers(map) {
       filter: ['==', ['get', 'type'], 'ensemble-envelope'],
       slot,
       paint: {
-        'line-color': '#EF4444',
-        'line-width': 1.5,
-        'line-dasharray': [4, 4],
+        'line-color': '#CE93D8',
+        'line-width': 1.8,
+        'line-dasharray': [5, 4],
       },
     });
   }
@@ -203,8 +320,8 @@ export function registerInvestigationLayers(map) {
       filter: ['==', ['get', 'type'], 'ensemble-trajectory'],
       slot,
       paint: {
-        'line-color': ['case', ['get', 'isNominal'], '#FFFFFF', '#9CA3AF'],
-        'line-width': ['case', ['get', 'isNominal'], 2, 1.2],
+        'line-color': ['case', ['get', 'isNominal'], '#E1BEE7', '#AB47BC'],
+        'line-width': ['case', ['get', 'isNominal'], 2.2, 1.2],
         'line-dasharray': [3, 3],
       },
     });
@@ -218,8 +335,8 @@ export function registerInvestigationLayers(map) {
       slot,
       paint: {
         'circle-radius': ['case', ['get', 'isNominal'], 5, 3.5],
-        'circle-color': ['case', ['get', 'isNominal'], '#FFFFFF', '#9CA3AF'],
-        'circle-stroke-color': '#111111',
+        'circle-color': ['case', ['get', 'isNominal'], '#FFFFFF', '#BA68C8'],
+        'circle-stroke-color': '#4A148C',
         'circle-stroke-width': 1.5,
       },
     });
@@ -234,8 +351,8 @@ export function registerInvestigationLayers(map) {
       filter: ['==', ['get', 'type'], 'slick-polygon'],
       slot,
       paint: {
-        'fill-color': '#111111',
-        'fill-opacity': 0.55,
+        'fill-color': '#D32F2F',
+        'fill-opacity': 0.45,
       },
     });
   }
@@ -248,7 +365,7 @@ export function registerInvestigationLayers(map) {
       slot,
       paint: {
         'line-color': '#FFFFFF',
-        'line-width': 2,
+        'line-width': 2.0,
       },
     });
   }
@@ -274,14 +391,15 @@ export function registerInvestigationLayers(map) {
       slot,
       layout: {
         'text-field': ['get', 'label'],
-        'text-size': 9,
+        'text-size': 8.5,
         'text-offset': [0, 1.2],
-        'text-allow-overlap': true,
+        'text-allow-overlap': false,
+        'text-optional': true,
       },
       paint: {
         'text-color': '#FFFFFF',
-        'text-halo-color': '#111111',
-        'text-halo-width': 1.5,
+        'text-halo-color': '#0A1118',
+        'text-halo-width': 2.0,
       },
     });
   }
@@ -293,7 +411,7 @@ export function registerInvestigationLayers(map) {
       filter: ['==', ['get', 'type'], 'axis-minor'],
       slot,
       paint: {
-        'line-color': '#CCCCCC',
+        'line-color': '#FFCDD2',
         'line-width': 1.5,
         'line-dasharray': [3, 2],
       },
@@ -310,12 +428,13 @@ export function registerInvestigationLayers(map) {
         'text-field': ['get', 'label'],
         'text-size': 8,
         'text-offset': [0, 1.2],
-        'text-allow-overlap': true,
+        'text-allow-overlap': false,
+        'text-optional': true,
       },
       paint: {
-        'text-color': '#CCCCCC',
-        'text-halo-color': '#111111',
-        'text-halo-width': 1.2,
+        'text-color': '#FFCDD2',
+        'text-halo-color': '#0A1118',
+        'text-halo-width': 1.8,
       },
     });
   }
@@ -328,7 +447,7 @@ export function registerInvestigationLayers(map) {
       slot,
       paint: {
         'circle-radius': 5,
-        'circle-color': '#111111',
+        'circle-color': '#D32F2F',
         'circle-stroke-color': '#FFFFFF',
         'circle-stroke-width': 2,
       },
@@ -347,18 +466,18 @@ export function registerInvestigationLayers(map) {
         'fill-color': [
           'case',
           ['get', 'isSpatialFocus'],
-          '#EF4444',
+          '#EF5350',
           ['get', 'isDriftFocus'],
-          '#3B82F6',
-          '#22C55E',
+          '#00BFA5',
+          '#00BFA5',
         ],
         'fill-opacity': [
           'case',
           ['get', 'isSpatialFocus'],
           0.28,
           ['get', 'isDriftFocus'],
-          0.24,
-          0.12,
+          0.22,
+          0.15,
         ],
       },
     });
@@ -374,13 +493,13 @@ export function registerInvestigationLayers(map) {
         'line-color': [
           'case',
           ['get', 'isSpatialFocus'],
-          '#DC2626',
+          '#EF5350',
           ['get', 'isDriftFocus'],
-          '#2563EB',
-          '#22C55E',
+          '#00E676',
+          '#00BFA5',
         ],
-        'line-width': ['case', ['get', 'isSpatialFocus'], 2.5, 1.5],
-        'line-dasharray': [4, 4],
+        'line-width': ['case', ['get', 'isSpatialFocus'], 2.5, 1.8],
+        'line-dasharray': [5, 4],
       },
     });
   }
@@ -392,8 +511,8 @@ export function registerInvestigationLayers(map) {
       filter: ['==', ['get', 'type'], 'origin-region'],
       slot,
       paint: {
-        'fill-color': '#22C55E',
-        'fill-opacity': 0.15,
+        'fill-color': '#00BFA5',
+        'fill-opacity': 0.18,
       },
     });
   }
@@ -405,9 +524,73 @@ export function registerInvestigationLayers(map) {
       filter: ['==', ['get', 'type'], 'origin-region'],
       slot,
       paint: {
-        'line-color': '#22C55E',
-        'line-width': 2,
+        'line-color': '#00BFA5',
+        'line-width': 2.0,
         'line-dasharray': [4, 3],
+      },
+    });
+  }
+  // Origin 50%, 75%, 95% Containment Rings (Lagrangian probability containment)
+  if (!map.getLayer('origin-containment-fill')) {
+    map.addLayer({
+      id: 'origin-containment-fill',
+      source: SOURCES.ORIGIN,
+      type: 'fill',
+      filter: ['==', ['get', 'type'], 'origin-containment-ring'],
+      slot,
+      paint: {
+        'fill-color': '#00E676',
+        'fill-opacity': [
+          'case',
+          ['==', ['get', 'tier'], 50],
+          0.20,
+          ['==', ['get', 'tier'], 75],
+          0.12,
+          0.06,
+        ],
+      },
+    });
+  }
+  if (!map.getLayer('origin-containment-line')) {
+    map.addLayer({
+      id: 'origin-containment-line',
+      source: SOURCES.ORIGIN,
+      type: 'line',
+      filter: ['==', ['get', 'type'], 'origin-containment-ring'],
+      slot,
+      paint: {
+        'line-color': '#00E676',
+        'line-width': [
+          'case',
+          ['==', ['get', 'tier'], 50],
+          2.0,
+          ['==', ['get', 'tier'], 75],
+          1.6,
+          1.3,
+        ],
+        'line-dasharray': [4, 3],
+      },
+    });
+  }
+  if (!map.getLayer('origin-containment-label-symbol')) {
+    map.addLayer({
+      id: 'origin-containment-label-symbol',
+      source: SOURCES.ORIGIN,
+      type: 'symbol',
+      filter: ['==', ['get', 'type'], 'origin-containment-label'],
+      slot,
+      layout: {
+        'text-field': ['get', 'label'],
+        'text-size': 8.5,
+        'text-anchor': 'bottom',
+        'text-offset': [0, -0.6],
+        'text-allow-overlap': false,
+        'text-optional': true,
+      },
+      paint: {
+        'text-color': '#69F0AE',
+        'text-halo-color': '#0A1118',
+        'text-halo-width': 1.8,
       },
     });
   }
@@ -419,10 +602,10 @@ export function registerInvestigationLayers(map) {
       filter: ['==', ['get', 'type'], 'origin-centroid'],
       slot,
       paint: {
-        'circle-radius': 5,
-        'circle-color': '#22C55E',
+        'circle-radius': 6.0,
+        'circle-color': '#00E676',
         'circle-stroke-color': '#FFFFFF',
-        'circle-stroke-width': 2,
+        'circle-stroke-width': 2.2,
       },
     });
   }
@@ -435,19 +618,36 @@ export function registerInvestigationLayers(map) {
       slot,
       layout: {
         'text-field': ['get', 'label'],
-        'text-size': 9,
-        'text-offset': [0, -1.3],
+        'text-size': 9.5,
+        'text-offset': [0, -1.8],
         'text-allow-overlap': true,
+        'text-ignore-placement': true,
       },
       paint: {
-        'text-color': '#FFFFFF',
-        'text-halo-color': '#111111',
-        'text-halo-width': 1.5,
+        'text-color': '#69F0AE',
+        'text-halo-color': '#0A1118',
+        'text-halo-width': 2.2,
       },
     });
   }
 
   // ─── 7. Backward Drift Layers ─────────────────────────────────────────
+  // Stochastic Ensemble Dispersion Fan Lines
+  if (!map.getLayer('drift-ensemble-fan-line')) {
+    map.addLayer({
+      id: 'drift-ensemble-fan-line',
+      source: SOURCES.DRIFT,
+      type: 'line',
+      filter: ['==', ['get', 'type'], 'drift-ensemble-fan'],
+      slot,
+      paint: {
+        'line-color': '#4DB6AC',
+        'line-width': 1.1,
+        'line-dasharray': [3, 4],
+        'line-opacity': 0.35,
+      },
+    });
+  }
   if (!map.getLayer('drift-envelope-fill')) {
     map.addLayer({
       id: 'drift-envelope-fill',
@@ -456,7 +656,7 @@ export function registerInvestigationLayers(map) {
       filter: ['==', ['get', 'type'], 'advection-envelope'],
       slot,
       paint: {
-        'fill-color': '#3B82F6',
+        'fill-color': '#00BFA5',
         'fill-opacity': 0.08,
       },
     });
@@ -469,8 +669,8 @@ export function registerInvestigationLayers(map) {
       filter: ['==', ['get', 'type'], 'advection-envelope'],
       slot,
       paint: {
-        'line-color': '#60A5FA',
-        'line-width': 1,
+        'line-color': '#4DB6AC',
+        'line-width': 1.3,
         'line-dasharray': [3, 3],
       },
     });
@@ -483,8 +683,8 @@ export function registerInvestigationLayers(map) {
       filter: ['==', ['get', 'type'], 'drift-trajectory'],
       slot,
       paint: {
-        'line-color': ['case', ['get', 'isDriftFocus'], '#60A5FA', '#3B82F6'],
-        'line-width': ['case', ['get', 'isDriftFocus'], 3.5, 2.5],
+        'line-color': ['case', ['get', 'isDriftFocus'], '#00E676', '#00BFA5'],
+        'line-width': ['case', ['get', 'isDriftFocus'], 3.2, 2.2],
         'line-dasharray': [6, 4],
       },
     });
@@ -499,28 +699,29 @@ export function registerInvestigationLayers(map) {
       paint: {
         'circle-radius': 3.5,
         'circle-color': '#FFFFFF',
-        'circle-stroke-color': '#3B82F6',
-        'circle-stroke-width': 1.5,
+        'circle-stroke-color': '#00BFA5',
+        'circle-stroke-width': 1.4,
       },
     });
   }
-  if (!map.getLayer('drift-advection-label')) {
+  if (!map.getLayer('drift-time-markers-symbol')) {
     map.addLayer({
-      id: 'drift-advection-label',
+      id: 'drift-time-markers-symbol',
       source: SOURCES.DRIFT,
       type: 'symbol',
-      filter: ['==', ['get', 'type'], 'advection-point'],
+      filter: ['==', ['get', 'type'], 'drift-time-marker'],
       slot,
       layout: {
         'text-field': ['get', 'label'],
-        'text-size': 8,
-        'text-offset': [0, 1.2],
+        'text-size': 9.5,
+        'text-anchor': 'left',
+        'text-offset': [0.6, 0.4],
         'text-allow-overlap': true,
       },
       paint: {
-        'text-color': '#93C5FD',
-        'text-halo-color': '#111111',
-        'text-halo-width': 1.2,
+        'text-color': '#80DEEA',
+        'text-halo-color': '#0A1118',
+        'text-halo-width': 2.0,
       },
     });
   }
@@ -533,14 +734,29 @@ export function registerInvestigationLayers(map) {
       slot,
       layout: {
         'text-field': ['get', 'label'],
-        'text-size': 8,
+        'text-size': 9,
         'text-offset': [0, -1.2],
         'text-allow-overlap': true,
       },
       paint: {
         'text-color': '#FFFFFF',
-        'text-halo-color': '#111111',
-        'text-halo-width': 1.5,
+        'text-halo-color': '#0A1118',
+        'text-halo-width': 2.0,
+      },
+    });
+  }
+  // Forward Dispersion Forecast Layers
+  if (!map.getLayer('drift-forward-line')) {
+    map.addLayer({
+      id: 'drift-forward-line',
+      source: SOURCES.DRIFT,
+      type: 'line',
+      filter: ['==', ['get', 'type'], 'drift-forward-line'],
+      slot,
+      paint: {
+        'line-color': '#29B6F6',
+        'line-width': 1.8,
+        'line-dasharray': [5, 4],
       },
     });
   }
@@ -552,8 +768,43 @@ export function registerInvestigationLayers(map) {
       filter: ['==', ['get', 'type'], 'drift-forward-envelope'],
       slot,
       paint: {
-        'fill-color': '#3B82F6',
-        'fill-opacity': 0.06,
+        'fill-color': '#0288D1',
+        'fill-opacity': 0.12,
+      },
+    });
+  }
+  if (!map.getLayer('drift-forward-envelope-line')) {
+    map.addLayer({
+      id: 'drift-forward-envelope-line',
+      source: SOURCES.DRIFT,
+      type: 'line',
+      filter: ['==', ['get', 'type'], 'drift-forward-envelope'],
+      slot,
+      paint: {
+        'line-color': '#29B6F6',
+        'line-width': 1.6,
+        'line-dasharray': [4, 4],
+      },
+    });
+  }
+  if (!map.getLayer('drift-forward-label-symbol')) {
+    map.addLayer({
+      id: 'drift-forward-label-symbol',
+      source: SOURCES.DRIFT,
+      type: 'symbol',
+      filter: ['==', ['get', 'type'], 'drift-forward-label'],
+      slot,
+      layout: {
+        'text-field': ['get', 'label'],
+        'text-size': 9,
+        'text-anchor': 'top',
+        'text-offset': [0, 0.8],
+        'text-allow-overlap': true,
+      },
+      paint: {
+        'text-color': '#81D4FA',
+        'text-halo-color': '#0A1118',
+        'text-halo-width': 2.0,
       },
     });
   }
@@ -567,8 +818,8 @@ export function registerInvestigationLayers(map) {
       filter: ['==', ['get', 'type'], 'metocean-wind'],
       slot,
       paint: {
-        'line-color': '#9CA3AF',
-        'line-width': 2,
+        'line-color': '#B0BEC5',
+        'line-width': 2.0,
       },
     });
   }
@@ -581,15 +832,16 @@ export function registerInvestigationLayers(map) {
       slot,
       layout: {
         'text-field': ['get', 'label'],
-        'text-size': 8,
+        'text-size': 8.5,
         'text-anchor': 'left',
         'text-offset': [0.8, 0],
-        'text-allow-overlap': true,
+        'text-allow-overlap': false,
+        'text-optional': true,
       },
       paint: {
-        'text-color': '#D1D5DB',
-        'text-halo-color': '#111111',
-        'text-halo-width': 1.5,
+        'text-color': '#ECEFF1',
+        'text-halo-color': '#0A1118',
+        'text-halo-width': 2.0,
       },
     });
   }
@@ -601,8 +853,8 @@ export function registerInvestigationLayers(map) {
       filter: ['==', ['get', 'type'], 'metocean-current'],
       slot,
       paint: {
-        'line-color': '#60A5FA',
-        'line-width': 2,
+        'line-color': '#4FC3F7',
+        'line-width': 2.0,
       },
     });
   }
@@ -615,20 +867,111 @@ export function registerInvestigationLayers(map) {
       slot,
       layout: {
         'text-field': ['get', 'label'],
-        'text-size': 8,
+        'text-size': 8.5,
         'text-anchor': 'left',
         'text-offset': [0.8, 0],
-        'text-allow-overlap': true,
+        'text-allow-overlap': false,
+        'text-optional': true,
       },
       paint: {
-        'text-color': '#93C5FD',
-        'text-halo-color': '#111111',
-        'text-halo-width': 1.5,
+        'text-color': '#E1F5FE',
+        'text-halo-color': '#0A1118',
+        'text-halo-width': 2.0,
+      },
+    });
+  }
+
+  // ─── 8. Metocean Forcing Layers ───────────────────────────────────────
+  if (!map.getLayer('metocean-wind-line')) {
+    map.addLayer({
+      id: 'metocean-wind-line',
+      source: SOURCES.METOCEAN,
+      type: 'line',
+      filter: ['==', ['get', 'type'], 'metocean-wind'],
+      slot,
+      paint: {
+        'line-color': '#64B5F6',
+        'line-width': ['case', ['get', 'isPrimary'], 2.4, 1.4],
+        'line-dasharray': [3, 2],
+        'line-opacity': 0.85,
+      },
+    });
+  }
+  if (!map.getLayer('metocean-wind-symbol')) {
+    map.addLayer({
+      id: 'metocean-wind-symbol',
+      source: SOURCES.METOCEAN,
+      type: 'symbol',
+      filter: ['==', ['get', 'type'], 'metocean-wind-label'],
+      slot,
+      layout: {
+        'text-field': ['get', 'label'],
+        'text-size': 8.5,
+        'text-anchor': 'left',
+        'text-offset': [0.6, 0],
+        'text-allow-overlap': false,
+        'text-optional': true,
+      },
+      paint: {
+        'text-color': '#90CAF9',
+        'text-halo-color': '#0A1118',
+        'text-halo-width': 2.0,
+      },
+    });
+  }
+  if (!map.getLayer('metocean-current-line')) {
+    map.addLayer({
+      id: 'metocean-current-line',
+      source: SOURCES.METOCEAN,
+      type: 'line',
+      filter: ['==', ['get', 'type'], 'metocean-current'],
+      slot,
+      paint: {
+        'line-color': '#4DB6AC',
+        'line-width': ['case', ['get', 'isPrimary'], 2.4, 1.4],
+        'line-dasharray': [4, 3],
+        'line-opacity': 0.85,
+      },
+    });
+  }
+  if (!map.getLayer('metocean-current-symbol')) {
+    map.addLayer({
+      id: 'metocean-current-symbol',
+      source: SOURCES.METOCEAN,
+      type: 'symbol',
+      filter: ['==', ['get', 'type'], 'metocean-current-label'],
+      slot,
+      layout: {
+        'text-field': ['get', 'label'],
+        'text-size': 8.5,
+        'text-anchor': 'left',
+        'text-offset': [0.6, 0],
+        'text-allow-overlap': false,
+        'text-optional': true,
+      },
+      paint: {
+        'text-color': '#80CBC4',
+        'text-halo-color': '#0A1118',
+        'text-halo-width': 2.0,
       },
     });
   }
 
   // ─── 9. AIS Tracks Layers ─────────────────────────────────────────────
+  if (!map.getLayer('ais-tracks-casing')) {
+    map.addLayer({
+      id: 'ais-tracks-casing',
+      source: SOURCES.AIS_TRACKS,
+      type: 'line',
+      filter: ['all', ['==', ['get', 'type'], 'ais-track'], ['==', ['get', 'isCandidate'], true]],
+      slot,
+      paint: {
+        'line-color': '#0F172A',
+        'line-width': 4.2,
+        'line-opacity': 0.85,
+      },
+    });
+  }
   if (!map.getLayer('ais-tracks-line')) {
     map.addLayer({
       id: 'ais-tracks-line',
@@ -640,16 +983,16 @@ export function registerInvestigationLayers(map) {
         'line-color': [
           'case',
           ['get', 'isCandidate'],
-          '#FACC15',
-          '#94A3B8',
+          '#FFD54F',
+          '#42A5F5',
         ],
         'line-width': [
           'case',
           ['get', 'isCandidate'],
-          3.5,
+          2.8,
           ['get', 'hasSelection'],
           1.2,
-          1.8,
+          1.5,
         ],
         'line-opacity': [
           'case',
@@ -657,7 +1000,7 @@ export function registerInvestigationLayers(map) {
           1.0,
           ['get', 'hasSelection'],
           0.25,
-          0.65,
+          0.55,
         ],
       },
     });
@@ -671,8 +1014,8 @@ export function registerInvestigationLayers(map) {
       slot,
       paint: {
         'circle-radius': ['case', ['get', 'isCandidate'], 2.5, 1.8],
-        'circle-color': ['case', ['get', 'isCandidate'], '#FACC15', '#94A3B8'],
-        'circle-opacity': 0.8,
+        'circle-color': ['case', ['get', 'isCandidate'], '#FFD54F', '#90CAF9'],
+        'circle-opacity': 0.85,
       },
     });
   }
@@ -686,8 +1029,8 @@ export function registerInvestigationLayers(map) {
       filter: ['==', ['get', 'type'], 'ais-gap-line'],
       slot,
       paint: {
-        'line-color': '#EF4444',
-        'line-width': ['case', ['get', 'isGapFocus'], 4, 2.5],
+        'line-color': '#FF5252',
+        'line-width': ['case', ['get', 'isGapFocus'], 3.8, 2.8],
         'line-dasharray': [4, 3],
       },
     });
@@ -701,14 +1044,15 @@ export function registerInvestigationLayers(map) {
       slot,
       layout: {
         'text-field': ['get', 'label'],
-        'text-size': 10,
+        'text-size': 9,
         'text-offset': [0, -1.2],
-        'text-allow-overlap': true,
+        'text-allow-overlap': false,
+        'text-optional': true,
       },
       paint: {
-        'text-color': '#EF4444',
-        'text-halo-color': '#111111',
-        'text-halo-width': 2,
+        'text-color': '#FF5252',
+        'text-halo-color': '#0A1118',
+        'text-halo-width': 2.0,
       },
     });
   }
@@ -722,8 +1066,8 @@ export function registerInvestigationLayers(map) {
       filter: ['==', ['get', 'type'], 'cpa-line'],
       slot,
       paint: {
-        'line-color': ['case', ['get', 'isSpatialFocus'], '#DC2626', '#FFFFFF'],
-        'line-width': ['case', ['get', 'isSpatialFocus'], 2.5, 1.5],
+        'line-color': ['case', ['get', 'isSpatialFocus'], '#FF5252', '#FFD54F'],
+        'line-width': ['case', ['get', 'isSpatialFocus'], 2.5, 1.8],
         'line-dasharray': [4, 3],
       },
     });
@@ -737,14 +1081,15 @@ export function registerInvestigationLayers(map) {
       slot,
       layout: {
         'text-field': ['get', 'label'],
-        'text-size': 9,
+        'text-size': 8.5,
         'text-offset': [0, -1.2],
-        'text-allow-overlap': true,
+        'text-allow-overlap': false,
+        'text-optional': true,
       },
       paint: {
         'text-color': '#FFFFFF',
-        'text-halo-color': '#111111',
-        'text-halo-width': 2,
+        'text-halo-color': '#0A1118',
+        'text-halo-width': 2.0,
       },
     });
   }
@@ -757,14 +1102,15 @@ export function registerInvestigationLayers(map) {
       slot,
       layout: {
         'text-field': ['get', 'label'],
-        'text-size': 9,
+        'text-size': 8.5,
         'text-offset': [0, 1.3],
-        'text-allow-overlap': true,
+        'text-allow-overlap': false,
+        'text-optional': true,
       },
       paint: {
-        'text-color': '#10B981',
-        'text-halo-color': '#111111',
-        'text-halo-width': 2,
+        'text-color': '#00E676',
+        'text-halo-color': '#0A1118',
+        'text-halo-width': 2.0,
       },
     });
   }
@@ -778,24 +1124,42 @@ export function registerInvestigationLayers(map) {
       filter: ['==', ['get', 'type'], 'vessel-lookahead'],
       slot,
       paint: {
-        'line-color': ['case', ['get', 'isCandidate'], '#FACC15', '#6B7280'],
-        'line-width': ['case', ['get', 'isCandidate'], 2, 1.2],
+        'line-color': ['case', ['get', 'isCandidate'], '#FFD54F', '#78909C'],
+        'line-width': ['case', ['get', 'isCandidate'], 2.0, 1.2],
         'line-dasharray': [2, 3],
       },
     });
   }
-  if (!map.getLayer('vessel-position-circle')) {
+  if (!map.getLayer('vessels-symbol')) {
     map.addLayer({
-      id: 'vessel-position-circle',
+      id: 'vessels-symbol',
       source: SOURCES.VESSELS,
-      type: 'circle',
+      type: 'symbol',
       filter: ['==', ['get', 'type'], 'vessel-position'],
       slot,
-      paint: {
-        'circle-radius': ['case', ['get', 'isCandidate'], 6, 4],
-        'circle-color': ['case', ['get', 'isCandidate'], '#FACC15', '#E2E8F0'],
-        'circle-stroke-color': '#111111',
-        'circle-stroke-width': 2,
+      layout: {
+        'icon-image': [
+          'case',
+          ['get', 'isCandidate'],
+          'vessel-selected',
+          'vessel-normal',
+        ],
+        'icon-rotate': ['coalesce', ['get', 'cog'], 0],
+        'icon-rotation-alignment': 'map',
+        'icon-pitch-alignment': 'map',
+        'icon-allow-overlap': true,
+        'icon-ignore-placement': true,
+        'icon-size': [
+          'interpolate',
+          ['linear'],
+          ['zoom'],
+          6, 0.14,
+          8, 0.22,
+          10, 0.35,
+          12, 0.52,
+          14, 0.75,
+          16, 1.05,
+        ],
       },
     });
   }
@@ -808,14 +1172,41 @@ export function registerInvestigationLayers(map) {
       slot,
       layout: {
         'text-field': ['get', 'label'],
-        'text-size': 10,
-        'text-offset': [0, -1.5],
-        'text-allow-overlap': true,
+        'text-size': 9,
+        'text-anchor': 'top',
+        'text-offset': [0, 1.3],
+        'text-allow-overlap': false,
+        'text-optional': true,
       },
       paint: {
-        'text-color': '#FACC15',
-        'text-halo-color': '#111111',
-        'text-halo-width': 2,
+        'text-color': '#FFD54F',
+        'text-halo-color': '#0A1118',
+        'text-halo-width': 2.0,
+      },
+    });
+  }
+
+  if (!map.getLayer('vessel-name-label')) {
+    map.addLayer({
+      id: 'vessel-name-label',
+      source: SOURCES.VESSELS,
+      type: 'symbol',
+      filter: ['==', ['get', 'type'], 'vessel-position'],
+      minzoom: 8.0,
+      slot,
+      layout: {
+        'text-field': ['concat', ['get', 'vesselName'], ' · ', ['to-string', ['get', 'sog']], ' kn'],
+        'text-size': 8.5,
+        'text-anchor': 'bottom',
+        'text-offset': [0, -1.3],
+        'text-allow-overlap': false,
+        'text-optional': true,
+        'text-ignore-placement': false,
+      },
+      paint: {
+        'text-color': ['case', ['get', 'isCandidate'], '#FFD54F', '#CFD8DC'],
+        'text-halo-color': '#0A1118',
+        'text-halo-width': 2.0,
       },
     });
   }
@@ -830,14 +1221,15 @@ export function registerInvestigationLayers(map) {
       slot,
       layout: {
         'text-field': ['get', 'label'],
-        'text-size': 11,
-        'text-offset': [0, -2],
-        'text-allow-overlap': true,
+        'text-size': 10,
+        'text-offset': [0, -1.8],
+        'text-allow-overlap': false,
+        'text-optional': true,
       },
       paint: {
-        'text-color': '#EF4444',
+        'text-color': '#FF5252',
         'text-halo-color': '#000000',
-        'text-halo-width': 2.5,
+        'text-halo-width': 2.2,
       },
     });
   }
@@ -852,7 +1244,7 @@ export function registerInvestigationLayers(map) {
       paint: {
         'circle-radius': 5,
         'circle-color': '#FFFFFF',
-        'circle-stroke-color': '#111111',
+        'circle-stroke-color': '#0A1118',
         'circle-stroke-width': 2,
       },
     });
@@ -865,15 +1257,16 @@ export function registerInvestigationLayers(map) {
       slot,
       layout: {
         'text-field': ['get', 'code'],
-        'text-size': 10,
+        'text-size': 9.5,
         'text-offset': [0, -1.4],
         'text-anchor': 'bottom',
-        'text-allow-overlap': true,
+        'text-allow-overlap': false,
+        'text-optional': true,
       },
       paint: {
         'text-color': '#FFFFFF',
-        'text-halo-color': '#111111',
-        'text-halo-width': 1.2,
+        'text-halo-color': '#0A1118',
+        'text-halo-width': 1.8,
       },
     });
   }
@@ -887,10 +1280,32 @@ const LAYER_GROUPS = {
   segmentation: ['segmentation-fill', 'segmentation-line', 'segmentation-centroid', 'segmentation-tag'],
   slick: ['slick-fill', 'slick-line', 'slick-centroid'],
   slickAxes: ['slick-axis-major', 'slick-axis-major-label', 'slick-axis-minor', 'slick-axis-minor-label'],
-  origin: ['origin-uncertainty-fill', 'origin-uncertainty-line', 'origin-region-fill', 'origin-region-line', 'origin-centroid-circle', 'origin-tag-symbol'],
-  drift: ['drift-envelope-fill', 'drift-envelope-line', 'drift-trajectory-line', 'drift-advection-point', 'drift-advection-label', 'drift-distance-symbol', 'drift-forward-envelope-fill'],
+  origin: [
+    'origin-containment-fill',
+    'origin-containment-line',
+    'origin-containment-label-symbol',
+    'origin-uncertainty-fill',
+    'origin-uncertainty-line',
+    'origin-region-fill',
+    'origin-region-line',
+    'origin-centroid-circle',
+    'origin-tag-symbol',
+  ],
+  drift: [
+    'drift-ensemble-fan-line',
+    'drift-envelope-fill',
+    'drift-envelope-line',
+    'drift-trajectory-line',
+    'drift-advection-point',
+    'drift-time-markers-symbol',
+    'drift-distance-symbol',
+    'drift-forward-line',
+    'drift-forward-envelope-fill',
+    'drift-forward-envelope-line',
+    'drift-forward-label-symbol',
+  ],
   metocean: ['metocean-wind-line', 'metocean-wind-symbol', 'metocean-current-line', 'metocean-current-symbol'],
-  ais: ['ais-tracks-line', 'ais-track-pips', 'vessel-lookahead-line', 'vessel-position-circle', 'ais-gap-line', 'ais-gap-label-symbol'],
+  ais: ['ais-tracks-casing', 'ais-tracks-line', 'ais-track-pips', 'vessel-lookahead-line', 'vessels-symbol', 'vessel-name-label', 'ais-gap-line', 'ais-gap-label-symbol'],
   candidateTags: ['candidate-tag-symbol'],
   cpa: ['cpa-line', 'cpa-badge-symbol', 'temporal-tag-symbol'],
   ensemble: ['ensemble-envelope-fill', 'ensemble-envelope-line', 'ensemble-trajectory-line', 'ensemble-endpoint-circle'],
@@ -931,16 +1346,16 @@ export function updateMapboxLayerVisibility(
   const showIncidents = tab === '01';
   setLayersVisibility(map, LAYER_GROUPS.incidents, showIncidents);
 
-  // 2. SAR Footprint (Tab 01 context, Tab 02 detection scene, Tab 03 & Tab 07)
-  const showSar = (visibleLayers.sarFootprint ?? true) && (tab === '01' || tab === '02' || tab === '03' || tab === '07');
+  // 2. SAR Footprint (Tab 01 context, Tab 02 detection scene, Tab 03 context)
+  const showSar = (visibleLayers.sarFootprint ?? true) && (tab === '01' || tab === '02' || tab === '03');
   setLayersVisibility(map, LAYER_GROUPS.sar, showSar);
 
   // 3. Semantic Segmentation Anomaly (Tab 02 only)
   const showSeg = (visibleLayers.spill ?? true) && tab === '02';
   setLayersVisibility(map, LAYER_GROUPS.segmentation, showSeg);
 
-  // 4. Characterized Slick Geometry (Tabs 03–07)
-  const showSlick = (visibleLayers.spill ?? true) && (tab === '03' || tab === '04' || tab === '05' || tab === '06' || tab === '07');
+  // 4. Characterized Slick / Observation Geometry (Tabs 01, 03–07)
+  const showSlick = (visibleLayers.spill ?? true) && (tab === '01' || tab === '03' || tab === '04' || tab === '05' || tab === '06' || tab === '07');
   setLayersVisibility(map, LAYER_GROUPS.slick, showSlick);
 
   // 4b. Slick Measurement Axes (Tab 03 only)
@@ -952,12 +1367,12 @@ export function updateMapboxLayerVisibility(
   setLayersVisibility(map, LAYER_GROUPS.drift, showDrift);
   setLayersVisibility(map, LAYER_GROUPS.origin, showDrift);
 
-  // 6. Metocean Forcing Vectors (Tabs 04, 06 & 07 — NOT Tab 02, 03, or 05)
-  const showMetocean = (visibleLayers.metocean ?? true) && (tab === '04' || tab === '06' || tab === '07');
+  // 6. Metocean Forcing Vectors (Tabs 04 & 06 — NOT Tab 01, 02, 03, 05, or 07)
+  const showMetocean = (visibleLayers.metocean ?? true) && (tab === '04' || tab === '06');
   setLayersVisibility(map, LAYER_GROUPS.metocean, showMetocean);
 
-  // 7. AIS Vessel Tracks & Traffic (Tabs 05–07)
-  const showAis = (visibleLayers.ais ?? true) && (tab === '05' || tab === '06' || tab === '07');
+  // 7. AIS Vessel Tracks & Traffic (Tabs 01 context, 05–07 investigation & record)
+  const showAis = (visibleLayers.ais ?? true) && (tab === '01' || tab === '05' || tab === '06' || tab === '07');
   setLayersVisibility(map, LAYER_GROUPS.ais, showAis);
 
   // 7b. Candidate Lead Tag (Tabs 06 & 07 only — NOT Tab 05)

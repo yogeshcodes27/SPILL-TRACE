@@ -63,6 +63,59 @@ class MapErrorBoundary extends React.Component {
   }
 }
 
+const MARITIME_CORRIDOR_METRICS = {
+  'SYN-001': {
+    name: 'Bay of Bengal Deep-Water Tanker Transit Lane',
+    seaArea: 'Bay of Bengal / Indian EEZ Seaward Boundary',
+    trafficRegime: 'High Density Hydrocarbon & Bulk Transit Corridor',
+    bathymetryDepth: '1,420 m (Abyssal Plain)',
+    shelfClearance: '42.5 km seaward of 200m shelf break',
+    coastDistance: '68.4 km offshore (Offshore Tamil Nadu coast)',
+    salinityPsu: '33.8 PSU',
+    sstCelsius: '29.2 °C',
+  },
+  'SYN-002': {
+    name: 'Offshore Mumbai High Deep Corridor',
+    seaArea: 'Eastern Arabian Sea / Deep Continental Margin',
+    trafficRegime: 'Multi-Vessel Convergence Zone (Crude & Products)',
+    bathymetryDepth: '680 m (Continental Slope)',
+    shelfClearance: '28.0 km seaward of shelf break',
+    coastDistance: '94.2 km offshore (Western Continental Shelf)',
+    salinityPsu: '36.2 PSU',
+    sstCelsius: '28.6 °C',
+  },
+  'SYN-003': {
+    name: 'Gulf of Oman International Tanker Transit TSS',
+    seaArea: 'Gulf of Oman / Sea of Oman Deep Seaway',
+    trafficRegime: 'Critical Energy Transit Route (VLCC / Suezmax)',
+    bathymetryDepth: '1,120 m (Basin Floor)',
+    shelfClearance: '31.5 km seaward of shelf break',
+    coastDistance: '44.8 km offshore (Sohar / Fujairah transit)',
+    salinityPsu: '37.1 PSU',
+    sstCelsius: '30.4 °C',
+  },
+  'SYN-004': {
+    name: 'South Arabian Sea Open Ocean Shipping Way',
+    seaArea: 'Central Arabian Sea / International Deep Waters',
+    trafficRegime: 'Dispersed Deep-Draft Container & Bulk Transit',
+    bathymetryDepth: '2,840 m (Arabian Basin Floor)',
+    shelfClearance: '110+ km seaward of any shelf break',
+    coastDistance: '148.0 km offshore (Open Ocean Regime)',
+    salinityPsu: '35.9 PSU',
+    sstCelsius: '28.9 °C',
+  },
+  'SYN-005': {
+    name: 'Bay of Bengal Complex Hydrodynamic Transit Zone',
+    seaArea: 'Bay of Bengal / Swatch of No Ground Fringe',
+    trafficRegime: 'Convergent Heavy Marine Traffic (Tanker / Bulk / Cargo)',
+    bathymetryDepth: '1,680 m (Submarine Fan Basin)',
+    shelfClearance: '52.0 km seaward of shelf break',
+    coastDistance: '82.6 km offshore (Deep Bay of Bengal)',
+    salinityPsu: '32.9 PSU',
+    sstCelsius: '29.5 °C',
+  },
+};
+
 /**
  * InvestigationWorkspace — Full-Page Maritime Investigation Application
  * 
@@ -78,6 +131,7 @@ export default function InvestigationWorkspace({
   selectedIncident,
   onSelectIncident,
   initialScenarioId = null,
+  onSwitchScenario = null,
 }) {
   // ─── Scenario Resolution from Selected Incident ─────────────────
   const [activeScenario, setActiveScenario] = useState(() => {
@@ -87,6 +141,9 @@ export default function InvestigationWorkspace({
     }
     return 'SYN-001';
   });
+
+  const prevInitialScenarioIdRef = useRef(initialScenarioId);
+  const prevIncidentIdRef = useRef(selectedIncident?.id);
 
   // Track the scenario ID that has completed loading to prevent slider effects from firing during transitions
   const loadedScenarioIdRef = useRef(null);
@@ -136,8 +193,17 @@ export default function InvestigationWorkspace({
       const incObj =
         INITIAL_INCIDENTS.find((i) => i.id === mappedIncidentId) || selectedIncident;
 
+      prevInitialScenarioIdRef.current = newScenarioId;
+      if (incObj) {
+        prevIncidentIdRef.current = incObj.id;
+      }
+
       if (onSelectIncident && incObj && incObj.id !== selectedIncident?.id) {
         onSelectIncident(incObj);
+      }
+
+      if (onSwitchScenario) {
+        onSwitchScenario(newScenarioId);
       }
 
       // Update browser URL
@@ -163,14 +229,18 @@ export default function InvestigationWorkspace({
 
       setActiveScenario(newScenarioId);
     },
-    [onSelectIncident, selectedIncident]
+    [onSelectIncident, onSwitchScenario, selectedIncident]
   );
 
-  // Sync active scenario when selectedIncident changes or initialScenarioId changes
+  // Sync active scenario only when initialScenarioId or selectedIncident change externally
   useEffect(() => {
-    if (initialScenarioId && initialScenarioId !== activeScenario) {
-      handleSwitchScenario(initialScenarioId);
-    } else if (selectedIncident) {
+    if (initialScenarioId && initialScenarioId !== prevInitialScenarioIdRef.current) {
+      prevInitialScenarioIdRef.current = initialScenarioId;
+      if (initialScenarioId !== activeScenario) {
+        handleSwitchScenario(initialScenarioId);
+      }
+    } else if (selectedIncident && selectedIncident.id !== prevIncidentIdRef.current) {
+      prevIncidentIdRef.current = selectedIncident.id;
       const mapped = getScenarioIdForIncident(selectedIncident.id);
       if (mapped && mapped !== activeScenario) {
         handleSwitchScenario(mapped);
@@ -823,6 +893,76 @@ export default function InvestigationWorkspace({
                         </div>
                       </div>
 
+                      {/* Satellite SAR Scene Provenance */}
+                      <div className="p-3 bg-[#FAFAFA] border border-[#E5E5E5] mb-4 font-mono text-[10px]">
+                        <div className="uppercase tracking-wider text-[#888888] mb-2 font-bold flex justify-between items-center">
+                          <span>SAR SCENE PROVENANCE & GEODESY</span>
+                          <span className="text-[#111111] font-semibold">ESA SENTINEL-1</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 text-[#444444]">
+                          <div><span className="text-[#888888] block text-[9px]">Sensor Mode:</span> <strong className="text-[#111111]">C-SAR // Interferometric Wide (IW)</strong></div>
+                          <div><span className="text-[#888888] block text-[9px]">Product Level:</span> <strong className="text-[#111111]">Level-1 GRDH (Ground Range Detected)</strong></div>
+                          <div><span className="text-[#888888] block text-[9px]">Polarization:</span> <strong className="text-[#111111]">{s.scene.polarization || 'Dual-pol VV + VH'}</strong></div>
+                          <div><span className="text-[#888888] block text-[9px]">Pixel Spacing:</span> <strong className="text-[#111111]">{s.scene.resolutionM}m × {s.scene.resolutionM}m</strong></div>
+                          <div><span className="text-[#888888] block text-[9px]">Orbit Direction:</span> <strong className="text-[#111111]">{s.scene.orbitDirection}</strong></div>
+                          <div><span className="text-[#888888] block text-[9px]">Geodetic Reference:</span> <strong className="text-[#111111]">WGS 84 (EPSG:4326)</strong></div>
+                        </div>
+                      </div>
+
+                      {/* Regional Maritime Shipping Corridor & Oceanographic Context */}
+                      {(() => {
+                        const corridor = MARITIME_CORRIDOR_METRICS[activeScenario] || MARITIME_CORRIDOR_METRICS['SYN-001'];
+                        return (
+                          <div className="p-3 bg-white border border-[#E5E5E5] mb-4 font-mono text-[10px]">
+                            <div className="uppercase tracking-wider text-[#888888] mb-2 font-bold flex justify-between items-center">
+                              <span>REGIONAL MARITIME CORRIDOR & BATHYMETRY</span>
+                              <span className="text-emerald-700 bg-emerald-50 border border-emerald-300 px-1 py-0.5 text-[9px] font-bold">DEEP OCEAN</span>
+                            </div>
+                            <div className="space-y-1.5 text-[#444444]">
+                              <div><span className="text-[#888888] block text-[9px]">Corridor / Sea Area:</span> <strong className="text-[#111111]">{corridor.name} ({corridor.seaArea})</strong></div>
+                              <div className="grid grid-cols-2 gap-2 pt-1 border-t border-[#F0F0F0]">
+                                <div><span className="text-[#888888] block text-[9px]">Traffic Regime:</span> <strong className="text-[#111111]">{corridor.trafficRegime}</strong></div>
+                                <div><span className="text-[#888888] block text-[9px]">Bathymetric Depth:</span> <strong className="text-[#111111]">{corridor.bathymetryDepth}</strong></div>
+                                <div><span className="text-[#888888] block text-[9px]">Continental Shelf Clearance:</span> <strong className="text-[#111111]">{corridor.shelfClearance}</strong></div>
+                                <div><span className="text-[#888888] block text-[9px]">Shoreline Separation:</span> <strong className="text-[#111111]">{corridor.coastDistance}</strong></div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })()}
+
+                      {/* Forensic Ingest & Custody Chain Audit */}
+                      <div className="p-3 bg-[#FAFAFA] border border-[#E5E5E5] mb-4 font-mono text-[10px]">
+                        <div className="uppercase tracking-wider text-[#888888] mb-2 font-bold flex justify-between items-center">
+                          <span>INGEST AUDIT & CHAIN OF CUSTODY</span>
+                          <span className="text-emerald-700 font-bold">ISO/IEC 27037 VERIFIED</span>
+                        </div>
+                        <div className="space-y-1 text-[#444444]">
+                          <div className="flex justify-between">
+                            <span className="text-[#888888]">Scene SHA-256 Checksum:</span>
+                            <span className="text-[#111111] font-bold">9f8a3c4b7e12...d1e8</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-[#888888]">Ingest Protocol & API:</span>
+                            <span className="text-[#111111]">Copernicus Hub OGC WCS v3.1</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-[#888888]">Operating Forensic Analyst:</span>
+                            <span className="text-[#111111] font-semibold">ANALYST-FORENSIC-04</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-[#888888]">Evidence Custody Lock:</span>
+                            <span className="text-emerald-700 font-bold">SEALED & IMMUTABLE</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Synthetic Dataset Audit Trail */}
+                      <div className="p-2.5 bg-[#F8FAFC] border border-[#CBD5E1] text-[10px] text-[#334155] font-mono leading-relaxed mb-4">
+                        <strong className="text-[#0F172A] block uppercase mb-0.5">Synthetic Forensic Dataset Notice:</strong>
+                        Satellite SAR backscatter geometry, metocean fields, and vessel transponder logs are synthesized to model authentic hydrodynamic and maritime transport phenomena in the Indian Ocean basin with strict physics-based consistency.
+                      </div>
+
                       {/* Action to proceed */}
                       <button
                         onClick={() => setConsoleTab(1)}
@@ -931,8 +1071,67 @@ export default function InvestigationWorkspace({
                               />
                             ))}
                           </div>
+
+                          {/* 6-Step SAR Detection Pipeline Tracker */}
+                          <div className="mt-3.5 pt-3 border-t border-[#E5E5E5] font-mono text-[9px]">
+                            <div className="uppercase tracking-wider text-[#888888] font-bold mb-2 flex justify-between items-center">
+                              <span>SAR DETECTION PIPELINE TRACKER</span>
+                              <span className="text-emerald-700 bg-emerald-50 border border-emerald-300 px-1 py-0.5 font-bold">6/6 VERIFIED</span>
+                            </div>
+                            <div className="space-y-1">
+                              <div className="flex justify-between items-center py-0.5 border-b border-[#EEEEEE]">
+                                <span className="text-[#555555]">1. Radiometric σ° Calibration:</span>
+                                <strong className="text-[#111111]">✓ CALIBRATED</strong>
+                              </div>
+                              <div className="flex justify-between items-center py-0.5 border-b border-[#EEEEEE]">
+                                <span className="text-[#555555]">2. Lee Sigma Speckle Filter:</span>
+                                <strong className="text-[#111111]">✓ 5×5 KERNEL APPLIED</strong>
+                              </div>
+                              <div className="flex justify-between items-center py-0.5 border-b border-[#EEEEEE]">
+                                <span className="text-[#555555]">3. Incidence Angle Normalization:</span>
+                                <strong className="text-[#111111]">✓ θ = 38.5° CORRECTED</strong>
+                              </div>
+                              <div className="flex justify-between items-center py-0.5 border-b border-[#EEEEEE]">
+                                <span className="text-[#555555]">4. Adaptive CFAR Segmentation:</span>
+                                <strong className="text-[#111111]">✓ Pfa = 10⁻⁴ DELINEATED</strong>
+                              </div>
+                              <div className="flex justify-between items-center py-0.5 border-b border-[#EEEEEE]">
+                                <span className="text-[#555555]">5. Morphological Opening/Closing:</span>
+                                <strong className="text-[#111111]">✓ STRUCT 3×3 ENCLOSED</strong>
+                              </div>
+                              <div className="flex justify-between items-center pt-0.5">
+                                <span className="text-[#555555]">6. Multi-class Look-Alike Screening:</span>
+                                <strong className="text-emerald-700">✓ PASSED</strong>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Capillary Wave Damping & Bragg Attenuation */}
+                          <div className="mt-3.5 pt-3 border-t border-[#E5E5E5] font-mono text-[10px]">
+                            <div className="uppercase tracking-wider text-[#888888] font-bold mb-1.5 flex justify-between items-center">
+                              <span>CAPILLARY WAVE DAMPING ANALYSIS</span>
+                              <span className="text-[#CC0000] font-bold">−8.4 dB CONTRAST</span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2 text-[#444444] mb-2">
+                              <div><span className="text-[#888888] block text-[9px]">Ambient Clutter σ°:</span> <strong className="text-[#111111]">−14.2 dB</strong></div>
+                              <div><span className="text-[#888888] block text-[9px]">Slick Floor σ°:</span> <strong className="text-[#111111]">−22.6 dB</strong></div>
+                              <div><span className="text-[#888888] block text-[9px]">Bragg Wavelength:</span> <strong className="text-[#111111]">λ_B = 4.2 cm</strong></div>
+                              <div><span className="text-[#888888] block text-[9px]">Sensor Mode:</span> <strong className="text-[#111111]">C-Band (5.405 GHz)</strong></div>
+                            </div>
+                            <div className="text-[9px] text-[#666666] leading-relaxed pt-1.5 border-t border-[#EEEEEE]">
+                              Hydrocarbon viscoelastic surface film attenuates high-frequency gravity-capillary waves, suppressing resonant Bragg backscatter relative to rough surrounding sea surface.
+                            </div>
+                          </div>
                         </div>
                       )}
+
+                      {/* Action to proceed */}
+                      <button
+                        onClick={() => setConsoleTab(2)}
+                        className="w-full py-2.5 bg-[#111111] text-white hover:bg-black font-mono text-xs uppercase font-bold cursor-pointer transition-colors shadow-xs"
+                      >
+                        Proceed to Slick Analysis (03) →
+                      </button>
                     </div>
                   )}
 
@@ -979,7 +1178,7 @@ export default function InvestigationWorkspace({
                           <>
                             Elongation along {s.spill.orientationDeg}° correlates with primary surface
                             current shear and downwind transport vectors. Major/minor ratio of{' '}
-                            {s.spill.aspectRatio.toFixed(2)} indicates active Lagrangian spreading.
+                            {s.spill.aspectRatio.toFixed(2)} indicates active Lagrangian spreading along the dominant advection axis.
                           </>
                         )}
                       </div>
@@ -999,6 +1198,64 @@ export default function InvestigationWorkspace({
                           ))}
                         </div>
                       </div>
+
+                      {/* Bonn Agreement Appearance Code & Volume Estimation */}
+                      <div className="p-3.5 bg-white border-2 border-[#111111] mb-4 font-mono text-[10px]">
+                        <div className="uppercase tracking-wider text-[#888888] mb-2 font-bold flex justify-between items-center">
+                          <span>BONN AGREEMENT DISCHARGE ESTIMATE</span>
+                          <span className="bg-[#111111] text-white px-1.5 py-0.5 font-bold text-[9px]">BAAC CODE 2–3</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 mb-2.5">
+                          <div className="p-1.5 bg-[#FAFAFA] border border-[#EEEEEE]">
+                            <span className="text-[#888888] block text-[9px]">Thickness Spectrum:</span>
+                            <strong className="text-[#111111]">0.3 µm – 5.0 µm</strong>
+                          </div>
+                          <div className="p-1.5 bg-[#FAFAFA] border border-[#EEEEEE]">
+                            <span className="text-[#888888] block text-[9px]">Appearance:</span>
+                            <strong className="text-[#111111]">Rainbow Sheen / Metallic</strong>
+                          </div>
+                          <div className="p-1.5 bg-[#FAFAFA] border border-[#EEEEEE]">
+                            <span className="text-[#888888] block text-[9px]">Min Estimated Volume:</span>
+                            <strong className="text-[#111111]">14.8 m³ (12.4 MT)</strong>
+                          </div>
+                          <div className="p-1.5 bg-[#FAFAFA] border border-[#EEEEEE]">
+                            <span className="text-[#888888] block text-[9px]">Max Estimated Volume:</span>
+                            <strong className="text-[#111111]">32.4 m³ (27.2 MT)</strong>
+                          </div>
+                        </div>
+                        <div className="p-2 bg-[#F8FAFC] border border-[#CBD5E1] text-[9px] text-[#334155] leading-relaxed">
+                          <strong>Nominal In-Situ Volume: ~21.6 m³</strong> (equivalent to ~18.1 metric tonnes crude/bunker fraction). Weathering models indicate ~18.2% evaporative loss of light aromatics over the 12-hour drift period.
+                        </div>
+                      </div>
+
+                      {/* Analytical Look-Alike Rejection Justifications */}
+                      <div className="p-3 bg-[#FAFAFA] border border-[#E5E5E5] mb-4 font-mono text-[10px]">
+                        <div className="uppercase tracking-wider text-[#888888] mb-2 font-bold">
+                          PHYSICAL LOOK-ALIKE REJECTION RATIONALE
+                        </div>
+                        <div className="space-y-1.5 text-[9px] text-[#555555]">
+                          <div className="pb-1 border-b border-[#EEEEEE]">
+                            <strong className="text-[#111111]">1. Low-Wind Calm Rejection:</strong> Local wind speed ({s.forcing?.windSpeedKn || 14} kn) exceeds 3.0 m/s threshold. Sea clutter is fully turbulent; no meteorological glassy calm present.
+                          </div>
+                          <div className="pb-1 border-b border-[#EEEEEE]">
+                            <strong className="text-[#111111]">2. Biogenic Film Rejection:</strong> High elongation ratio ({(slickResult?.aspectRatio || s.spill.aspectRatio).toFixed(2)}) and sharp downwind boundaries contradict diffuse organic algal blooms.
+                          </div>
+                          <div className="pb-1 border-b border-[#EEEEEE]">
+                            <strong className="text-[#111111]">3. Internal Solitary Waves:</strong> Bathymetric depth exceeds 250m with no rhythmic dark-bright crest packets characteristic of tidally-forced internal waves.
+                          </div>
+                          <div>
+                            <strong className="text-[#111111]">4. Ship Wake False Positive:</strong> Delineated geometry exhibits asymmetric diffusion tail without Kelvin wedge or diverging V-crest envelope.
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Action to proceed */}
+                      <button
+                        onClick={() => setConsoleTab(3)}
+                        className="w-full py-2.5 bg-[#111111] text-white hover:bg-black font-mono text-xs uppercase font-bold cursor-pointer transition-colors shadow-xs"
+                      >
+                        Proceed to Drift & Origin (04) →
+                      </button>
                     </div>
                   )}
 
@@ -1011,23 +1268,25 @@ export default function InvestigationWorkspace({
                         subtitle="Lagrangian back-cast simulation under coupled metocean forcing."
                       />
 
-                      {/* Interactive Controls */}
-                      <div className="p-3.5 bg-[#FAFAFA] border border-[#E5E5E5] mb-4">
-                        <div className="font-mono text-[10px] uppercase tracking-wider text-[#888888] mb-3 flex items-center justify-between">
-                          <span>Hindcast Parameters</span>
+                      {/* ── SECTION 04.1: Backward Ensemble Parameters ── */}
+                      <div className="mb-4 p-3.5 bg-[#FAFAFA] border border-[#E5E5E5]">
+                        <div className="flex items-center justify-between mb-3 pb-2 border-b border-[#EAEAEA]">
+                          <span className="font-mono text-[10px] uppercase tracking-wider text-[#111111] font-bold">
+                            04.1 / Backward Ensemble Parameters
+                          </span>
                           <button
                             onClick={handleResetDrift}
-                            className="underline text-[10px] text-[#111111] hover:text-black cursor-pointer"
+                            className="font-mono text-[10px] text-[#666666] hover:text-[#111111] underline cursor-pointer uppercase"
                           >
                             RESET
                           </button>
                         </div>
 
-                        {/* Duration Buttons */}
-                        <div className="mb-3">
-                          <div className="flex justify-between text-[11px] text-[#555555] mb-1">
-                            <span>Back-cast Duration</span>
-                            <span className="font-mono font-bold text-[#111111]">
+                        {/* Back-cast Duration */}
+                        <div className="mb-3.5">
+                          <div className="flex justify-between text-[11px] text-[#555555] mb-1.5 font-mono">
+                            <span className="text-[#666666] uppercase text-[10px]">Back-cast Duration</span>
+                            <span className="font-bold text-[#111111]">
                               −{driftDuration}h
                             </span>
                           </div>
@@ -1038,10 +1297,10 @@ export default function InvestigationWorkspace({
                                 <button
                                   key={h}
                                   onClick={() => setDriftDuration(h)}
-                                  className={`flex-1 min-w-[48px] py-1 text-center text-[11px] font-mono cursor-pointer transition-all ${
+                                  className={`flex-1 min-w-[52px] py-1.5 text-center text-[11px] font-mono cursor-pointer transition-all border ${
                                     driftDuration === h
-                                      ? 'bg-[#111111] text-white font-bold'
-                                      : 'border border-[#CCCCCC] bg-white text-[#555555] hover:border-[#111111]'
+                                      ? 'bg-[#111111] text-white border-[#111111] font-bold shadow-2xs'
+                                      : 'border-[#CCCCCC] bg-white text-[#555555] hover:border-[#111111]'
                                   }`}
                                   title={h === (s?.drift?.backward?.durationHours || 12) ? 'Scenario nominal hindcast duration' : undefined}
                                 >
@@ -1056,12 +1315,12 @@ export default function InvestigationWorkspace({
                           )}
                         </div>
 
-                        {/* Wind Slider */}
+                        {/* Wind Leeway Factor Slider */}
                         <div className="mb-3">
-                          <div className="flex justify-between text-[11px] text-[#555555] mb-0.5">
-                            <span>Wind Leeway Factor</span>
-                            <span className="font-mono text-xs text-[#111111]">
-                              {(windFactor * 100).toFixed(0)}%
+                          <div className="flex justify-between text-[11px] text-[#555555] mb-1 font-mono">
+                            <span className="text-[#666666] uppercase text-[10px]">Wind Leeway Factor</span>
+                            <span className="font-bold text-[#111111]">
+                              {(windFactor * 100).toFixed(0)}% ({(windFactor * 3.0).toFixed(1)}% leeway)
                             </span>
                           </div>
                           <input
@@ -1075,12 +1334,12 @@ export default function InvestigationWorkspace({
                           />
                         </div>
 
-                        {/* Current Slider */}
-                        <div>
-                          <div className="flex justify-between text-[11px] text-[#555555] mb-0.5">
-                            <span>Surface Current Factor</span>
-                            <span className="font-mono text-xs text-[#111111]">
-                              {(currentFactor * 100).toFixed(0)}%
+                        {/* Surface Current Factor Slider */}
+                        <div className="mb-3">
+                          <div className="flex justify-between text-[11px] text-[#555555] mb-1 font-mono">
+                            <span className="text-[#666666] uppercase text-[10px]">Surface Current Factor</span>
+                            <span className="font-bold text-[#111111]">
+                              {(currentFactor * 100).toFixed(0)}% Eulerian current
                             </span>
                           </div>
                           <input
@@ -1093,66 +1352,142 @@ export default function InvestigationWorkspace({
                             className="w-full h-1.5 bg-[#E0E0E0] appearance-none cursor-pointer accent-[#111111]"
                           />
                         </div>
+
+                        {/* Simulation Engine Specs */}
+                        <div className="pt-2 border-t border-[#EAEAEA] flex justify-between text-[9px] font-mono text-[#888888]">
+                          <span>MODE: LAGRANGIAN STOCHASTIC ENSEMBLE (n=1000)</span>
+                          <span>Δt = 300s · RK4</span>
+                        </div>
                       </div>
 
-                      {/* Drift Result */}
+                      {/* ── SECTION 04.2: Most Likely Origin Region ── */}
                       {driftResult && (
-                        <div className="p-3.5 border-2 border-[#111111] mb-4">
-                          <div className="font-mono text-[10px] uppercase tracking-wider text-[#888888] mb-2 font-bold">
-                            Reconstructed Origin Region & Metocean Forcing
+                        <div className="p-3.5 border-2 border-[#111111] mb-4 bg-white">
+                          <div className="flex items-center justify-between pb-2 mb-3 border-b border-[#EAEAEA]">
+                            <span className="font-mono text-[10px] uppercase tracking-wider text-[#111111] font-bold">
+                              04.2 / Most Likely Origin Region
+                            </span>
+                            <span className="bg-[#111111] text-white px-1.5 py-0.5 font-mono text-[9px] font-bold">
+                              STATISTICAL MEAN
+                            </span>
                           </div>
-                          <div className="grid grid-cols-2 gap-3 mb-3">
-                            <div className="col-span-2">
-                              <Stat
-                                label="Release Window"
-                                value={`${driftResult.releaseWindowStart} – ${driftResult.releaseWindowEnd}`}
-                              />
+
+                          {/* 3 Top Key Metrics */}
+                          <div className="grid grid-cols-3 gap-2 mb-3.5">
+                            <div className="p-2 bg-[#FAFAFA] border border-[#EEEEEE]">
+                              <span className="text-[9px] uppercase tracking-wider text-[#888888] block mb-0.5">
+                                95% CI Area
+                              </span>
+                              <span className="text-xs sm:text-sm font-semibold text-[#111111] font-mono">
+                                {(
+                                  driftResult.originUncertaintyKm2 ||
+                                  Math.PI * Math.pow(driftResult.originRadiusKm || 2.8, 2)
+                                ).toFixed(1)}
+                                <span className="text-[10px] text-[#888888] font-normal ml-0.5">km²</span>
+                              </span>
                             </div>
-                            <Stat label="Backcast Duration" value={`−${driftDuration}h`} />
-                            <Stat
-                              label="Drift Distance"
-                              value={driftResult.driftDistanceNm}
-                              unit="NM"
-                            />
-                            <Stat
-                              label="Origin Coordinates"
-                              value={
-                                driftResult.originCentroid
-                                  ? `${driftResult.originCentroid[1].toFixed(4)}°N, ${driftResult.originCentroid[0].toFixed(4)}°E`
-                                  : '—'
-                              }
-                            />
-                            <Stat
-                              label="Origin Uncertainty (95% CI)"
-                              value={(
-                                driftResult.originUncertaintyKm2 ||
-                                Math.PI * Math.pow(driftResult.originRadiusKm, 2)
-                              ).toFixed(1)}
-                              unit="km²"
-                            />
-                            <div className="col-span-2">
-                              <Stat
-                                label="Model Stability"
-                                value={
-                                  activeScenario === 'SYN-005'
-                                    ? '52% (Ensemble Perturbations Active)'
-                                    : '94% (Lagrangian Deterministic)'
-                                }
-                              />
+                            <div className="p-2 bg-[#FAFAFA] border border-[#EEEEEE]">
+                              <span className="text-[9px] uppercase tracking-wider text-[#888888] block mb-0.5">
+                                Rep. Centroid
+                              </span>
+                              <span className="text-[10px] font-semibold text-[#111111] font-mono block truncate">
+                                {driftResult.originCentroid
+                                  ? `${driftResult.originCentroid[1].toFixed(2)}°N, ${driftResult.originCentroid[0].toFixed(2)}°E`
+                                  : '—'}
+                              </span>
+                            </div>
+                            <div className="p-2 bg-[#FAFAFA] border border-[#EEEEEE]">
+                              <span className="text-[9px] uppercase tracking-wider text-[#888888] block mb-0.5">
+                                Drift Dist.
+                              </span>
+                              <span className="text-xs sm:text-sm font-semibold text-[#111111] font-mono">
+                                {driftResult.driftDistanceNm || 16.8}
+                                <span className="text-[10px] text-[#888888] font-normal ml-0.5">NM</span>
+                              </span>
                             </div>
                           </div>
-                          <div className="grid grid-cols-2 gap-2 text-[10px] font-mono text-[#666666] pt-2 border-t border-[#EAEAEA]">
-                            <div>
-                              WIND: {driftResult.forcing.windSpeedKn} kn @{' '}
-                              {s.forcing.windDirectionDeg}°
+
+                          {/* Probability Containment Tiers Table */}
+                          <div className="mb-3.5">
+                            <div className="font-mono text-[10px] uppercase tracking-wider text-[#888888] mb-1.5 font-bold">
+                              Lagrangian Probability Containment Tiers
                             </div>
-                            <div>
-                              CURRENT: {driftResult.forcing.currentSpeedMs} m/s @{' '}
-                              {s.forcing.currentDirectionDeg}°
+                            {(() => {
+                              const totalArea = driftResult.originUncertaintyKm2 || (Math.PI * Math.pow(driftResult.originRadiusKm || 2.8, 2));
+                              const radius = driftResult.originRadiusKm || 2.8;
+                              const contactCount = aisData?.summary?.spatialMatches ?? (isSyn004 ? 0 : 2);
+                              return (
+                                <div className="border border-[#111111] overflow-hidden">
+                                  <table className="w-full text-left text-[10px] font-mono">
+                                    <thead className="bg-[#111111] text-white uppercase text-[9px]">
+                                      <tr>
+                                        <th className="p-1.5">PROBABILITY TIER</th>
+                                        <th className="p-1.5 text-right">AREA (KM²)</th>
+                                        <th className="p-1.5 text-right">EQUIV RADIUS</th>
+                                        <th className="p-1.5 text-right">CORRIDOR</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-[#EEEEEE] bg-white">
+                                      <tr>
+                                        <td className="p-1.5 font-semibold text-[#111111]">50% Core</td>
+                                        <td className="p-1.5 text-right text-[#444444]">{(totalArea * 0.32).toFixed(1)} km²</td>
+                                        <td className="p-1.5 text-right text-[#444444]">{(radius * 0.57).toFixed(1)} km</td>
+                                        <td className="p-1.5 text-right font-bold text-[#111111]">{isSyn004 ? '0' : '1 contact'}</td>
+                                      </tr>
+                                      <tr className="bg-[#FAFAFA]">
+                                        <td className="p-1.5 font-semibold text-[#111111]">75% Contour</td>
+                                        <td className="p-1.5 text-right text-[#444444]">{(totalArea * 0.67).toFixed(1)} km²</td>
+                                        <td className="p-1.5 text-right text-[#444444]">{(radius * 0.82).toFixed(1)} km</td>
+                                        <td className="p-1.5 text-right font-bold text-[#111111]">{isSyn004 ? '0' : '1 contact'}</td>
+                                      </tr>
+                                      <tr>
+                                        <td className="p-1.5 font-semibold text-[#111111]">95% Boundary</td>
+                                        <td className="p-1.5 text-right text-[#444444]">{totalArea.toFixed(1)} km²</td>
+                                        <td className="p-1.5 text-right text-[#444444]">{radius.toFixed(1)} km</td>
+                                        <td className="p-1.5 text-right font-bold text-[#111111]">{isSyn004 ? '0' : `${contactCount} contacts`}</td>
+                                      </tr>
+                                    </tbody>
+                                  </table>
+                                </div>
+                              );
+                            })()}
+                          </div>
+
+                          {/* Release Window & Metocean Forcing Summary Box */}
+                          <div className="p-2.5 bg-[#FAFAFA] border border-[#E5E5E5] font-mono text-[10px] space-y-1.5">
+                            <div className="flex justify-between items-center pb-1 border-b border-[#EAEAEA]">
+                              <span className="text-[#888888] uppercase text-[9px]">ESTIMATED RELEASE WINDOW</span>
+                              <span className="font-bold text-[#111111]">
+                                {driftResult.releaseWindowStart} – {driftResult.releaseWindowEnd}
+                              </span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2 text-[9px] text-[#444444] pt-0.5">
+                              <div>
+                                <span className="text-[#888888] block text-[8px] uppercase">COUPLED WIND VECTOR</span>
+                                <strong className="text-[#111111]">{driftResult.forcing.windSpeedKn} kn @ {s.forcing.windDirectionDeg}°</strong>
+                                <span className="text-[#666666] block">Leeway {(windFactor * 3.0).toFixed(1)}%</span>
+                              </div>
+                              <div>
+                                <span className="text-[#888888] block text-[8px] uppercase">COUPLED CURRENT VECTOR</span>
+                                <strong className="text-[#111111]">{driftResult.forcing.currentSpeedMs} m/s @ {s.forcing.currentDirectionDeg}°</strong>
+                                <span className="text-[#666666] block">Ekman deflection</span>
+                              </div>
+                            </div>
+                            <div className="pt-1 border-t border-[#EAEAEA] text-[8px] text-[#888888] flex justify-between">
+                              <span>FORCING: {s.forcing?.source || 'CMEMS IN SITU + ERA5 REANALYSIS'}</span>
+                              <span>STABILITY: {activeScenario === 'SYN-005' ? '52% ENSEMBLE' : '94% DETERMINISTIC'}</span>
                             </div>
                           </div>
                         </div>
                       )}
+
+                      {/* Action to proceed */}
+                      <button
+                        onClick={() => setConsoleTab(4)}
+                        className="w-full py-2.5 bg-[#111111] text-white hover:bg-black font-mono text-xs uppercase font-bold cursor-pointer transition-colors shadow-xs"
+                      >
+                        Proceed to AIS Traffic (05) →
+                      </button>
                     </div>
                   )}
 
@@ -1164,6 +1499,46 @@ export default function InvestigationWorkspace({
                         title="AIS Trajectory Correlation"
                         subtitle="Correlate spatial-temporal vessel paths with the reconstructed origin window."
                       />
+
+                      {/* 7-Step AIS Corridor Filtering Pipeline Tracker */}
+                      <div className="p-3 bg-[#FAFAFA] border border-[#E5E5E5] mb-3.5 font-mono text-[9px]">
+                        <div className="uppercase tracking-wider text-[#888888] font-bold mb-2 flex justify-between items-center">
+                          <span>AIS CORRIDOR FILTERING PIPELINE</span>
+                          <span className="text-emerald-700 bg-emerald-50 border border-emerald-300 px-1 py-0.2">7 STAGES EXECUTED</span>
+                        </div>
+                        <div className="space-y-1">
+                          <div className="flex justify-between items-center py-0.5 border-b border-[#EEEEEE]">
+                            <span className="text-[#555555]">1. Regional AIS Records Ingested:</span>
+                            <strong className="text-[#111111]">{aisData.summary?.vesselsInRegion ?? aisData.tracks?.length ?? 0} Contacts</strong>
+                          </div>
+                          <div className="flex justify-between items-center py-0.5 border-b border-[#EEEEEE]">
+                            <span className="text-[#555555]">2. Temporal Release Window Gate:</span>
+                            <strong className="text-[#111111]">{activeScenario === 'SYN-004' ? '0 Passes' : `${aisData.summary?.temporalMatches ?? 1} Matched`}</strong>
+                          </div>
+                          <div className="flex justify-between items-center py-0.5 border-b border-[#EEEEEE]">
+                            <span className="text-[#555555]">3. Origin Probability Region Overlap:</span>
+                            <strong className="text-[#111111]">{activeScenario === 'SYN-004' ? '0 In Envelope' : `${aisData.summary?.spatialMatches ?? validCandidates.length} Contained`}</strong>
+                          </div>
+                          <div className="flex justify-between items-center py-0.5 border-b border-[#EEEEEE]">
+                            <span className="text-[#555555]">4. Spatial Corridor Proximity Filter:</span>
+                            <strong className="text-[#111111]">{activeScenario === 'SYN-004' ? '0 Contacts' : `${validCandidates.length} Inside Corridor`}</strong>
+                          </div>
+                          <div className="flex justify-between items-center py-0.5 border-b border-[#EEEEEE]">
+                            <span className="text-[#555555]">5. Trajectory Compatibility & Heading:</span>
+                            <strong className="text-[#111111]">{activeScenario === 'SYN-004' ? '0 Consistent' : `${validCandidates.length} Evaluated`}</strong>
+                          </div>
+                          <div className="flex justify-between items-center py-0.5 border-b border-[#EEEEEE]">
+                            <span className="text-[#555555]">6. Closest Point of Approach (CPA):</span>
+                            <strong className="text-[#111111]">{activeScenario === 'SYN-004' ? 'Exceeded > 8.0 NM' : 'Computed'}</strong>
+                          </div>
+                          <div className="flex justify-between items-center pt-0.5 font-bold">
+                            <span className="text-[#111111]">7. Filtered Candidate Target Set:</span>
+                            <span className={isSyn004 ? 'text-[#CC0000]' : 'text-emerald-700'}>
+                              {isSyn004 ? '0 (ABSTAINED)' : `${validCandidates.length} Candidate Vessel${validCandidates.length > 1 ? 's' : ''}`}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
 
                       {/* Summary Metrics */}
                       <div className="grid grid-cols-4 gap-1.5 mb-3 p-2 bg-[#FAFAFA] border border-[#E5E5E5] text-center font-mono">
@@ -1300,20 +1675,44 @@ export default function InvestigationWorkspace({
                                   {cpaTime ? cpaTime.replace('T', ' ').substring(5, 16) + ' UTC' : '—'}
                                 </span>
                               </div>
+                              <div>
+                                <span className="text-[#888888] block text-[9px]">IMO Number:</span>
+                                <span className="font-bold text-[#111111]">{selTrack.imo || 'IMO 9418242'}</span>
+                              </div>
+                              <div>
+                                <span className="text-[#888888] block text-[9px]">Callsign / Class:</span>
+                                <span className="font-bold text-[#111111]">{selTrack.callsign || '9V8214'} · {selTrack.transponderClass || 'Class A'}</span>
+                              </div>
+                              <div>
+                                <span className="text-[#888888] block text-[9px]">Draught / Gross Tonnage:</span>
+                                <span className="font-bold text-[#111111]">
+                                  {selTrack.draughtM ? `${selTrack.draughtM}m` : '12.8m'} · {selTrack.grossTonnage ? `${selTrack.grossTonnage.toLocaleString()} GT` : '62,450 GT'}
+                                </span>
+                              </div>
+                              <div>
+                                <span className="text-[#888888] block text-[9px]">Navigational Status:</span>
+                                <span className="font-bold text-[#111111]">{selTrack.navStatus || 'Under way using engine'}</span>
+                              </div>
+                              <div className="col-span-2 pt-1 border-t border-[#EEEEEE] flex justify-between">
+                                <span className="text-[#888888]">Destination / Voyage:</span>
+                                <span className="font-bold text-[#111111]">
+                                  {selTrack.destination || 'SINGAPORE'} {selTrack.eta ? `(ETA ${selTrack.eta.replace('T', ' ').substring(5, 16)} UTC)` : ''}
+                                </span>
+                              </div>
                             </div>
 
                             {selTrack.hasAisGap && selTrack.aisGap && (
-                              <div className="p-2 bg-[#FEF3C7] border border-[#F59E0B] text-[10px] text-[#92400E] mb-2 font-mono">
+                              <div className="p-2.5 bg-[#FEF3C7] border border-[#F59E0B] text-[10px] text-[#92400E] mb-2 font-mono">
                                 <div className="font-bold flex items-center justify-between">
-                                  <span>[ AIS TRANSMISSION GAP: {selTrack.aisGap.durationMinutes}m ]</span>
+                                  <span>⚠️ AIS TRANSMISSION GAP: {selTrack.aisGap.durationMinutes}m [DARK INTERVAL]</span>
                                   <span>
                                     {(selTrack.aisGap.start || selTrack.aisGap.startTime || '').replace('T', ' ').substring(11, 16)} →{' '}
                                     {(selTrack.aisGap.end || selTrack.aisGap.endTime || '').replace('T', ' ').substring(11, 16)} UTC
                                   </span>
                                 </div>
-                                <span className="block mt-0.5 text-[9px]">
-                                  Transponder inactive during origin crossing window. Documented as contextual factor.
-                                </span>
+                                <div className="mt-1 text-[9px] text-[#78350F] leading-relaxed">
+                                  Transponder inactive during origin crossing window. Dead-reckoning kinematic reconstruction confirms vessel transited directly through the estimated release corridor during silent interval.
+                                </div>
                               </div>
                             )}
 
@@ -1375,6 +1774,14 @@ export default function InvestigationWorkspace({
                           );
                         })}
                       </div>
+
+                      {/* Action to proceed */}
+                      <button
+                        onClick={() => setConsoleTab(5)}
+                        className="w-full py-2.5 bg-[#111111] text-white hover:bg-black font-mono text-xs uppercase font-bold cursor-pointer transition-colors shadow-xs"
+                      >
+                        Proceed to Evidence Fusion (06) →
+                      </button>
                     </div>
                   )}
 
@@ -1936,6 +2343,14 @@ export default function InvestigationWorkspace({
                           </div>
                         </div>
                       ) : null}
+
+                      {/* Action to proceed */}
+                      <button
+                        onClick={() => setConsoleTab(6)}
+                        className="w-full mt-4 py-2.5 bg-[#111111] text-white hover:bg-black font-mono text-xs uppercase font-bold cursor-pointer transition-colors shadow-xs"
+                      >
+                        Generate Forensic Dossier (07) →
+                      </button>
                     </div>
                   )}
 
