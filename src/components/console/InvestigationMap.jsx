@@ -36,6 +36,7 @@ import { setupMapboxInteractions } from '../../services/map/mapboxInteractions.j
 import { INITIAL_INCIDENTS } from '../../data/incidentsData.js';
 import { getScenarioIdForIncident } from '../../services/spilltraceService.js';
 import { calculateBearingDeg } from '../../services/map/mapGeometry.js';
+import { createVessel3DLayer } from '../../services/map/vessel3DLayer.js';
 
 const BASEMAP_MODES = {
   SATELLITE: 'satellite',
@@ -50,6 +51,12 @@ export default function InvestigationMap({
   highlightedFactor,
   onSelectFactor,
   onFeatureSelect,
+  basemapMode: propBasemapMode,
+  onBasemapChange,
+  visibleLayers: propVisibleLayers,
+  onToggleLayer,
+  showCallouts = true,
+  hideOverlays = false,
 }) {
   const mapContainerRef = useRef(null);
   const mapRef = useRef(null);
@@ -59,19 +66,34 @@ export default function InvestigationMap({
   const prevCandidateMmsiRef = useRef(selectedCandidateMmsi);
 
   // Basemap mode: SATELLITE (default) | MAP (nautical light)
-  const [basemapMode, setBasemapMode] = useState(BASEMAP_MODES.SATELLITE);
+  const [internalBasemapMode, setInternalBasemapMode] = useState(BASEMAP_MODES.SATELLITE);
+  const basemapMode = propBasemapMode !== undefined ? propBasemapMode : internalBasemapMode;
+
+  const handleSetBasemapMode = (mode) => {
+    setInternalBasemapMode(mode);
+    if (onBasemapChange) onBasemapChange(mode);
+  };
 
   // Real-time telemetry HUD state
   const [cursorCoords, setCursorCoords] = useState(null);
   const [layersMenuOpen, setLayersMenuOpen] = useState(false);
-  const [visibleLayers, setVisibleLayers] = useState({
+  const [internalVisibleLayers, setInternalVisibleLayers] = useState({
     sarFootprint: true,
+    sarImage: true,
     spill: true,
     drift: true,
-    ais: true,
-    metocean: true,
+    forecast: true,
     uncertainty: true,
+    ais: true,
+    vesselTracks: true,
+    candidateVessels: true,
+    metocean: true,
+    windVectors: true,
+    oceanCurrents: true,
+    coastline: true,
   });
+
+  const visibleLayers = propVisibleLayers !== undefined ? propVisibleLayers : internalVisibleLayers;
 
   const scenario = investigationState?.scenario;
   const scenarioId = investigationState?.scenarioId || scenario?.id || 'SYN-001';
@@ -80,6 +102,280 @@ export default function InvestigationMap({
   const drift = investigationState?.drift || scenario?.drift?.backward;
   const aisTraffic = investigationState?.aisTraffic || scenario?.aisTraffic;
   const ensemble = investigationState?.ensemble || scenario?.ensembleRuns;
+
+  // Mutable refs for 3D layer animation loop and events (zero re-instantiation context loss)
+  const scenarioRef = useRef(scenario);
+  const activeTabRef = useRef(activeTab);
+  const selectedMmsiRef = useRef(selectedCandidateMmsi);
+  const visibleLayersRef = useRef(visibleLayers);
+  const vessel3DLayerRef = useRef(null);
+  const calloutMarkersRef = useRef([]);
+
+  useEffect(() => { scenarioRef.current = scenario; }, [scenario]);
+  useEffect(() => { activeTabRef.current = activeTab; }, [activeTab]);
+  useEffect(() => { selectedMmsiRef.current = selectedCandidateMmsi; }, [selectedCandidateMmsi]);
+  useEffect(() => { visibleLayersRef.current = visibleLayers; }, [visibleLayers]);
+
+  // ─── 0. Georeferenced SAR Radar Raster Overlay ───────────────────────
+  const addOrUpdateSarRaster = useCallback(() => {
+    const map = mapRef.current;
+    if (!map || !mapReadyRef.current || !scenario?.scene?.bbox) return;
+
+    // CRITICAL: NEVER display the raw SAR raster overlay in Stage 04 (Origin Reconstruction) or Stage 06/07!
+    // Stage 04 and 06 require the crystal-clear satellite ocean basemap (Reference 1).
+    // In Stage 02, only display if explicitly enabled by user.
+    const shouldShow = activeTab === '02' && (visibleLayers?.sarImage ?? true);
+    if (!shouldShow) {
+      if (map.getLayer('sar-raster-layer')) {
+        map.setLayoutProperty('sar-raster-layer', 'visibility', 'none');
+      }
+      return;
+    }
+
+    const [minLon, minLat, maxLon, maxLat] = scenario.scene.bbox;
+    const coords = [
+      [minLon, maxLat],
+      [maxLon, maxLat],
+      [maxLon, minLat],
+      [minLon, minLat],
+    ];
+
+    if (!map.getSource('sar-raster-source')) {
+      map.addSource('sar-raster-source', {
+        type: 'image',
+        url: '/images/layers/layer1_raw_sar.jpg',
+        coordinates: coords,
+      });
+
+      const beforeLayer = map.getLayer('sar-footprint-fill') ? 'sar-footprint-fill' : undefined;
+      map.addLayer(
+        {
+          id: 'sar-raster-layer',
+          type: 'raster',
+          source: 'sar-raster-source',
+          paint: {
+            'raster-opacity': 0.72,
+            'raster-contrast': 0.2,
+          },
+        },
+        beforeLayer
+      );
+    } else {
+      try {
+        map.getSource('sar-raster-source').setCoordinates(coords);
+        if (map.getLayer('sar-raster-layer')) {
+          map.setLayoutProperty('sar-raster-layer', 'visibility', 'visible');
+        }
+      } catch (e) {}
+    }
+  }, [scenario, activeTab, visibleLayers]);
+
+  // ─── 0b. Tactical Forensic Callout Markers (References 1, 2, 3) ───────
+  const updateCalloutMarkers = useCallback(() => {
+    const map = mapRef.current;
+    if (!map || !mapReadyRef.current || !scenario) return;
+
+    // Clear existing markers
+    calloutMarkersRef.current.forEach((m) => m.remove());
+    calloutMarkersRef.current = [];
+
+    if (!showCallouts) return;
+
+    const currentTab = activeTab;
+
+    // 1. Detected Oil Slick Marker (Tabs 04, 06, 07) -- NOT Tab 02 (clean slick in Ref 2)
+    if (scenario?.spill?.centroid && (currentTab === '04' || currentTab === '06' || currentTab === '07')) {
+      const [cLon, cLat] = scenario.spill.centroid;
+      const acqTime = scenario?.scene?.acquisitionTime
+        ? scenario.scene.acquisitionTime.replace('T', ' ').substring(0, 16) + ' UTC'
+        : '2024-06-15 05:42 UTC';
+      const area = scenario.spill.areaKm2 ? `${scenario.spill.areaKm2.toFixed(1)} km²` : '12.6 km²';
+
+      const el = document.createElement('div');
+      el.className = 'mapbox-forensic-callout-marker';
+      el.style.cssText = 'pointer-events: none; transform: translate(-50%, -100%);';
+      el.innerHTML = `
+        <div style="background: #0B131E; border: 1px solid #ef4444; padding: 5px 9px; border-radius: 2px; box-shadow: 0 4px 16px rgba(0,0,0,0.85); font-family: monospace; font-size: 9.5px; color: #fff; min-width: 135px;">
+          <div style="font-weight: 700; color: #fff; font-size: 10px; display: flex; align-items: center; gap: 5px; margin-bottom: 2px;">
+            <span style="color: #ef4444; font-size: 12px; line-height: 1;">●</span> Detected Oil Slick
+          </div>
+          <div style="color: #cbd5e1; font-size: 8.5px;">${acqTime}</div>
+          <div style="color: #94a3b8; font-size: 8.5px;">Area: <strong style="color: #fff;">${area}</strong></div>
+        </div>
+        <div style="width: 1.5px; height: 12px; background: #ef4444; margin: 0 auto;"></div>
+        <div style="width: 6px; height: 6px; border-radius: 50%; background: #ef4444; margin: 0 auto; box-shadow: 0 0 8px #ef4444;"></div>
+      `;
+
+      const marker = new mapboxgl.Marker({ element: el, anchor: 'bottom' })
+        .setLngLat([cLon, cLat])
+        .addTo(map);
+      calloutMarkersRef.current.push(marker);
+    }
+
+    // 2. Estimated Origin Marker (Tabs 04, 06, 07)
+    const originCentroid = scenario?.drift?.backward?.originCentroid;
+    if (originCentroid && (currentTab === '04' || currentTab === '06' || currentTab === '07')) {
+      const [oLon, oLat] = originCentroid;
+      const relWindow = scenario?.drift?.backward?.releaseWindowStart && scenario?.drift?.backward?.releaseWindowEnd
+        ? `${scenario.drift.backward.releaseWindowStart} – ${scenario.drift.backward.releaseWindowEnd}`
+        : '2024-06-14 18:00 – 23:00 UTC';
+      const uncertaintyKm = scenario?.drift?.backward?.originRadiusKm
+        ? (scenario.drift.backward.originRadiusKm).toFixed(1)
+        : '3.2';
+
+      const el = document.createElement('div');
+      el.className = 'mapbox-forensic-callout-marker';
+      el.style.cssText = 'pointer-events: none; transform: translate(-50%, -100%);';
+      el.innerHTML = `
+        <div style="background: #0B131E; border: 1px solid #10b981; padding: 5px 9px; border-radius: 2px; box-shadow: 0 4px 16px rgba(0,0,0,0.85); font-family: monospace; font-size: 9.5px; color: #fff; min-width: 155px;">
+          <div style="font-weight: 700; color: #fff; font-size: 10px; display: flex; align-items: center; gap: 5px; margin-bottom: 2px;">
+            <span style="color: #10b981; font-size: 12px; line-height: 1;">⊕</span> Estimated Origin
+          </div>
+          <div style="color: #cbd5e1; font-size: 8.5px;">${oLat.toFixed(3)}° N, ${oLon.toFixed(3)}° E</div>
+          <div style="color: #94a3b8; font-size: 8.5px;">${relWindow}</div>
+          <div style="color: #34d399; font-size: 8.5px; font-weight: 600;">(± ${uncertaintyKm} km, 95% CI)</div>
+        </div>
+        <div style="width: 1.5px; height: 12px; background: #10b981; margin: 0 auto;"></div>
+        <div style="width: 6px; height: 6px; border-radius: 50%; background: #ef4444; border: 1.5px solid #ffffff; margin: 0 auto; box-shadow: 0 0 8px #10b981;"></div>
+      `;
+
+      const marker = new mapboxgl.Marker({ element: el, anchor: 'bottom' })
+        .setLngLat([oLon, oLat])
+        .addTo(map);
+      calloutMarkersRef.current.push(marker);
+    }
+
+    // 3. Forecast Drift Marker (Tab 04)
+    if (currentTab === '04') {
+      const [cLon, cLat] = scenario.spill.centroid;
+      const [oLon, oLat] = originCentroid || [cLon, cLat];
+      const fwdLon = cLon + (cLon - oLon) * 0.48;
+      const fwdLat = cLat + (cLat - oLat) * 0.48;
+
+      const el = document.createElement('div');
+      el.className = 'mapbox-forensic-callout-marker';
+      el.style.cssText = 'pointer-events: none;';
+      el.innerHTML = `
+        <div style="background: #0B131E; border: 1px solid #38bdf8; padding: 4px 8px; border-radius: 2px; box-shadow: 0 4px 14px rgba(0,0,0,0.8); font-family: monospace; font-size: 9px; color: #fff;">
+          <div style="font-weight: 700; color: #38bdf8; text-transform: uppercase;">Forecast Drift</div>
+          <div style="color: #cbd5e1; font-size: 8px;">Next 24–72 h</div>
+        </div>
+      `;
+      const marker = new mapboxgl.Marker({ element: el, anchor: 'center' })
+        .setLngLat([fwdLon, fwdLat])
+        .addTo(map);
+      calloutMarkersRef.current.push(marker);
+    }
+
+    // 4. Candidate Vessel Callout Tags (Tabs 02, 04, 06)
+    if ((currentTab === '02' || currentTab === '04' || currentTab === '06') && scenario?.aisTraffic?.tracks) {
+      scenario.aisTraffic.tracks.forEach((track, idx) => {
+        const positions = track.positions || [];
+        if (!positions.length) return;
+
+        let tagPos = positions[0];
+        if (currentTab === '02') {
+          // Stage 02: find closest position to spill centroid
+          const slickC = scenario?.spill?.centroid;
+          if (slickC) {
+            let minD = Infinity;
+            for (const p of positions) {
+              if (!p.isGap) {
+                const d = Math.hypot(p.lat - slickC[1], p.lon - slickC[0]);
+                if (d < minD) {
+                  minD = d;
+                  tagPos = p;
+                }
+              }
+            }
+          }
+        } else if (currentTab === '04' && idx === 0 && originCentroid) {
+          tagPos = { lon: originCentroid[0] + 0.015, lat: originCentroid[1] - 0.012, timestamp: '2024-06-14T21:30:00Z' };
+        } else if (currentTab === '04' || currentTab === '06' || currentTab === '07') {
+          const origin = scenario?.drift?.backward?.originCentroid;
+          if (origin) {
+            let minD = Infinity;
+            for (const p of positions) {
+              if (!p.isGap) {
+                const d = Math.hypot(p.lat - origin[1], p.lon - origin[0]);
+                if (d < minD) {
+                  minD = d;
+                  tagPos = p;
+                }
+              }
+            }
+          }
+        }
+
+        const isSelected = selectedCandidateMmsi && String(track.mmsi) === String(selectedCandidateMmsi);
+
+        // Vessel colors per tab matching reference images:
+        let tagColor = '#38bdf8';
+        let borderColor = '#334155';
+        let vesselLabel = track.vesselName || `Vessel ${String.fromCharCode(65 + idx)}`;
+        if (currentTab === '02') {
+          const colors = ['#F97316', '#38BDF8', '#10B981'];
+          tagColor = colors[idx % colors.length];
+          borderColor = tagColor;
+          vesselLabel = `Vessel ${String.fromCharCode(65 + idx)}`;
+        } else if (currentTab === '04') {
+          const colors = ['#10B981', '#94A3B8', '#10B981'];
+          tagColor = colors[idx % colors.length];
+          borderColor = tagColor;
+          vesselLabel = `Vessel ${String.fromCharCode(65 + idx)}`;
+        } else if (currentTab === '06') {
+          const colors = ['#EF4444', '#38BDF8', '#10B981', '#CBD5E1', '#F59E0B'];
+          tagColor = colors[idx % colors.length];
+          borderColor = isSelected ? '#38bdf8' : tagColor;
+        }
+
+        const timeStr = tagPos.timestamp
+          ? (currentTab === '02' ? tagPos.timestamp.substring(11, 16) + ' UTC' : tagPos.timestamp.substring(5, 16).replace('T', ' ') + ' UTC')
+          : '06-14 21:30 UTC';
+
+        const el = document.createElement('div');
+        el.className = 'mapbox-vessel-tag-marker';
+        el.style.cssText = 'pointer-events: auto; cursor: pointer; transform: translate(-50%, -100%);';
+        el.innerHTML = `
+          <div style="background: #0B131E; border: 1px solid ${borderColor}; padding: 3px 8px; border-radius: 2px; box-shadow: 0 4px 14px rgba(0,0,0,0.85); font-family: monospace; font-size: 8.5px; color: #fff; white-space: nowrap;">
+            <div style="font-weight: 700; color: ${tagColor};">${vesselLabel}</div>
+            <div style="color: #cbd5e1; font-size: 7.5px;">${timeStr}</div>
+          </div>
+          <div style="width: 1px; height: 10px; background: ${borderColor}; margin: 0 auto;"></div>
+        `;
+        el.onclick = () => {
+          if (onSelectCandidate) onSelectCandidate(track.mmsi);
+        };
+
+        const marker = new mapboxgl.Marker({ element: el, anchor: 'bottom', offset: [0, -10] })
+          .setLngLat([tagPos.lon, tagPos.lat])
+          .addTo(map);
+        calloutMarkersRef.current.push(marker);
+      });
+    }
+
+    // 5. Authentic Coastal Geographic Landmarks (Chennai, Mahabalipuram, Puducherry)
+    const coastalLandmarks = [
+      { name: 'Chennai', coords: [80.2707, 13.0827] },
+      { name: 'Mahabalipuram', coords: [80.1927, 12.6269] },
+      { name: 'Puducherry', coords: [79.8083, 11.9416] },
+    ];
+
+    coastalLandmarks.forEach((loc) => {
+      const el = document.createElement('div');
+      el.className = 'mapbox-coastal-landmark';
+      el.style.cssText = 'pointer-events: none; transform: translate(-50%, -50%);';
+      el.innerHTML = `
+        <div style="background: rgba(11, 19, 30, 0.88); border: 1px solid rgba(255,255,255,0.25); padding: 1.5px 5px; border-radius: 2px; font-family: sans-serif; font-size: 8px; color: #cbd5e1; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">
+          ${loc.name}
+        </div>
+      `;
+      const marker = new mapboxgl.Marker({ element: el, anchor: 'center' })
+        .setLngLat(loc.coords)
+        .addTo(map);
+      calloutMarkersRef.current.push(marker);
+    });
+  }, [scenario, activeTab, showCallouts, selectedCandidateMmsi, onSelectCandidate]);
 
   // ─── 1. Synchronize Stage-Aware GeoJSON Sources ───────────────────────
   const syncSourceData = useCallback(() => {
@@ -110,10 +406,13 @@ export default function InvestigationMap({
           src.setData(geoJson);
         }
       });
+
+      addOrUpdateSarRaster();
+      updateCalloutMarkers();
     } catch (err) {
       console.warn('Error syncing Mapbox investigation sources:', err);
     }
-  }, [scenario, scenarioId, detection, slick, drift, aisTraffic, ensemble, activeTab, selectedCandidateMmsi, highlightedFactor]);
+  }, [scenario, scenarioId, detection, slick, drift, aisTraffic, ensemble, activeTab, selectedCandidateMmsi, highlightedFactor, addOrUpdateSarRaster, updateCalloutMarkers]);
 
 
   // ─── 2. Camera Fit Helpers ───────────────────────────────────────────
@@ -155,7 +454,7 @@ export default function InvestigationMap({
     // Use satellite-streets-v12 / standard-satellite
     const initialStyle =
       basemapMode === BASEMAP_MODES.SATELLITE
-        ? (MAPBOX_STYLES.STANDARD_SATELLITE || MAPBOX_STYLES.SATELLITE)
+        ? MAPBOX_STYLES.SATELLITE
         : MAPBOX_STYLES.STREETS;
 
     const map = new mapboxgl.Map({
@@ -172,6 +471,28 @@ export default function InvestigationMap({
     // Load Handler: Register all sources, layers & event listeners once
     let cleanupInteractions = () => {};
 
+    const init3DVesselLayer = () => {
+      if (vessel3DLayerRef.current) {
+        vessel3DLayerRef.current.dispose();
+        vessel3DLayerRef.current = null;
+      }
+      const vessel3D = createVessel3DLayer({
+        onSelectCandidate: (mmsi) => {
+          if (onSelectCandidate) onSelectCandidate(mmsi);
+        },
+        getActiveScenario: () => scenarioRef.current,
+        getActiveTab: () => activeTabRef.current,
+        getSelectedMmsi: () => selectedMmsiRef.current,
+        getVisibleLayers: () => visibleLayersRef.current,
+      });
+      vessel3DLayerRef.current = vessel3D;
+
+      if (!map.getLayer('3d-vessel-layer')) {
+        const beforeLayer = map.getLayer('vessel-name-label') ? 'vessel-name-label' : undefined;
+        map.addLayer(vessel3D.customLayer, beforeLayer);
+      }
+    };
+
     const onStyleReady = () => {
       registerInvestigationLayers(map);
       mapReadyRef.current = true;
@@ -181,6 +502,9 @@ export default function InvestigationMap({
 
       // Set initial layer visibility for current tab
       updateMapboxLayerVisibility(map, activeTab, visibleLayers, scenarioId);
+
+      // Initialize 3D vessel custom layer with shared WebGL context
+      init3DVesselLayer();
 
       // Fit initial camera
       fitCameraToExtent(activeTab, 0);
@@ -199,6 +523,18 @@ export default function InvestigationMap({
 
     map.on('load', onStyleReady);
 
+    // Forward click and mousemove to 3D vessel layer for interactive raycast hit-testing
+    const onMapClick = (e) => {
+      if (vessel3DLayerRef.current?.handleMapClick(e)) {
+        return;
+      }
+    };
+    const onMapMouseMove = (e) => {
+      vessel3DLayerRef.current?.handleMapMouseMove(e);
+    };
+    map.on('click', onMapClick);
+    map.on('mousemove', onMapMouseMove);
+
     if (typeof window !== 'undefined') {
       window._investigationMap = map;
     }
@@ -209,6 +545,12 @@ export default function InvestigationMap({
 
     return () => {
       cleanupInteractions();
+      map.off('click', onMapClick);
+      map.off('mousemove', onMapMouseMove);
+      if (vessel3DLayerRef.current) {
+        vessel3DLayerRef.current.dispose();
+        vessel3DLayerRef.current = null;
+      }
       map.getCanvas()?.removeEventListener('mouseout', onMouseOut);
       if (typeof window !== 'undefined') {
         delete window._investigationMap;
@@ -226,7 +568,7 @@ export default function InvestigationMap({
 
     const targetStyle =
       basemapMode === BASEMAP_MODES.SATELLITE
-        ? (MAPBOX_STYLES.STANDARD_SATELLITE || MAPBOX_STYLES.SATELLITE)
+        ? MAPBOX_STYLES.SATELLITE
         : MAPBOX_STYLES.STREETS;
 
     mapReadyRef.current = false;
@@ -237,6 +579,24 @@ export default function InvestigationMap({
       mapReadyRef.current = true;
       syncSourceData();
       updateMapboxLayerVisibility(map, activeTab, visibleLayers, scenarioId);
+
+      // Re-initialize 3D vessel layer for the new style context
+      if (vessel3DLayerRef.current) {
+        vessel3DLayerRef.current.dispose();
+        vessel3DLayerRef.current = null;
+      }
+      const vessel3D = createVessel3DLayer({
+        onSelectCandidate: (mmsi) => {
+          if (onSelectCandidate) onSelectCandidate(mmsi);
+        },
+        getActiveScenario: () => scenarioRef.current,
+        getActiveTab: () => activeTabRef.current,
+        getSelectedMmsi: () => selectedMmsiRef.current,
+        getVisibleLayers: () => visibleLayersRef.current,
+      });
+      vessel3DLayerRef.current = vessel3D;
+      const beforeLayer = map.getLayer('vessel-name-label') ? 'vessel-name-label' : undefined;
+      map.addLayer(vessel3D.customLayer, beforeLayer);
     });
   }, [basemapMode]);
 
@@ -244,6 +604,8 @@ export default function InvestigationMap({
   useEffect(() => {
     if (!mapReadyRef.current) return;
     syncSourceData();
+    vessel3DLayerRef.current?.refreshVessels();
+    mapRef.current?.triggerRepaint();
 
     // Trigger camera fit when scenario changes
     if (scenarioId && lastScenarioIdRef.current !== scenarioId) {
@@ -259,6 +621,8 @@ export default function InvestigationMap({
 
     syncSourceData();
     updateMapboxLayerVisibility(map, activeTab, visibleLayers, scenarioId);
+    vessel3DLayerRef.current?.refreshVessels();
+    map.triggerRepaint();
 
     // Adjust camera when switching tabs
     if (activeTab && lastActiveTabRef.current !== activeTab) {
@@ -270,6 +634,8 @@ export default function InvestigationMap({
   // Adjust camera framing smoothly when candidate selection changes in AIS or Fusion
   useEffect(() => {
     if (!mapReadyRef.current) return;
+    vessel3DLayerRef.current?.refreshVessels();
+    mapRef.current?.triggerRepaint();
     if (prevCandidateMmsiRef.current !== selectedCandidateMmsi) {
       prevCandidateMmsiRef.current = selectedCandidateMmsi;
       if (selectedCandidateMmsi && (activeTab === '05' || activeTab === '06')) {
@@ -282,6 +648,16 @@ export default function InvestigationMap({
   const toggleLayer = (layerKey) => {
     setVisibleLayers((prev) => ({ ...prev, [layerKey]: !prev[layerKey] }));
   };
+
+  // ResizeObserver for dynamic map layout adjustments (tabs/panels)
+  useEffect(() => {
+    if (!mapContainerRef.current) return;
+    const observer = new ResizeObserver(() => {
+      mapRef.current?.resize();
+    });
+    observer.observe(mapContainerRef.current);
+    return () => observer.disconnect();
+  }, []);
 
   // ─── Fallback When Mapbox Token Missing ──────────────────────────────
   if (!isMapboxConfigured()) {
@@ -308,37 +684,47 @@ export default function InvestigationMap({
   }
 
   return (
-    <div className="relative w-full h-full bg-[#FAFAFA] overflow-hidden select-none">
+    <div className="relative w-full h-full bg-[#0A1118] overflow-hidden select-none">
       {/* ══ Mapbox DOM Canvas Mount Container ═══════════════════════ */}
       <div ref={mapContainerRef} className="w-full h-full z-0" />
 
-      {/* ══ Top-Left Technical Telemetry HUD (Minimal Map Card) ═════ */}
-      <div className="absolute top-3 left-3 z-30 pointer-events-none flex flex-col gap-1 font-mono">
-        <div className="bg-white/95 backdrop-blur-xs text-[#111111] px-3 py-1.5 border border-[#CCCCCC] shadow-xs flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-emerald-600 inline-block flex-shrink-0" />
-          <span className="text-[11px] font-bold uppercase tracking-wider text-[#111111]">
-            {scenarioId} · FORENSIC MAP
-          </span>
-          <span className="text-[#CCCCCC]">|</span>
-          <span className="text-[10px] text-[#666666]">WGS 84 · EPSG:4326</span>
-          <span className="text-[#CCCCCC]">|</span>
-          <span className="text-[9px] px-1 py-0.2 uppercase font-bold text-[#0D9488]">
-            {basemapMode === BASEMAP_MODES.SATELLITE ? 'SATELLITE' : 'MAP'}
-          </span>
-        </div>
-
-        {/* Live Cursor Coordinates Readout */}
-        {cursorCoords && (
-          <div className="bg-white/95 backdrop-blur-xs text-[#111111] px-2.5 py-1 border border-[#CCCCCC] shadow-xs text-[10px]">
-            LAT <span className="font-semibold text-[#111111]">{cursorCoords.lat}° N</span> · LON{' '}
-            <span className="font-semibold text-[#111111]">{cursorCoords.lng}° E</span>
+      {/* ══ Top-Left Technical Telemetry HUD (Shown when hideOverlays is false) ═ */}
+      {!hideOverlays && (
+        <div className="absolute top-3 left-3 z-30 pointer-events-none flex flex-col gap-1 font-mono">
+          <div className="bg-white/95 backdrop-blur-xs text-[#111111] px-3 py-1.5 border border-[#CCCCCC] shadow-xs flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-emerald-600 inline-block flex-shrink-0" />
+            <span className="text-[11px] font-bold uppercase tracking-wider text-[#111111]">
+              {scenarioId} · FORENSIC MAP
+            </span>
+            <span className="text-[#CCCCCC]">|</span>
+            <span className="text-[10px] text-[#666666]">WGS 84 · EPSG:4326</span>
+            <span className="text-[#CCCCCC]">|</span>
+            <span className="text-[9px] px-1 py-0.2 uppercase font-bold text-[#0D9488]">
+              {basemapMode === BASEMAP_MODES.SATELLITE ? 'SATELLITE' : 'MAP'}
+            </span>
           </div>
-        )}
-      </div>
 
-      {/* ══ Top-Right Map Controls & Basemap Switcher ═════════════════ */}
-      <div className="absolute top-3 right-3 z-30 flex flex-col items-end gap-2 font-mono">
-        <div className="flex items-center gap-1.5">
+          {/* Live Cursor Coordinates Readout */}
+          {cursorCoords && (
+            <div className="bg-white/95 backdrop-blur-xs text-[#111111] px-2.5 py-1 border border-[#CCCCCC] shadow-xs text-[10px]">
+              LAT <span className="font-semibold text-[#111111]">{cursorCoords.lat}° N</span> · LON{' '}
+              <span className="font-semibold text-[#111111]">{cursorCoords.lng}° E</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Cursor coordinates HUD in dedicated mode */}
+      {hideOverlays && cursorCoords && (
+        <div className="absolute top-3 left-3 z-10 pointer-events-none bg-[#0B131E]/80 backdrop-blur-xs text-[#A0AEC0] px-2 py-0.5 border border-white/10 shadow-xs font-mono text-[9px]">
+          LAT <span className="font-semibold text-white">{cursorCoords.lat}° N</span> · LON{' '}
+          <span className="font-semibold text-white">{cursorCoords.lng}° E</span>
+        </div>
+      )}
+
+      {/* ══ Top-Right Controls (Basemap Switcher & Layers Menu when hideOverlays is false) ══ */}
+      {!hideOverlays && (
+        <div className="absolute top-3 right-3 z-30 flex items-center gap-2 font-mono">
           {/* Basemap Mode Switcher: SATELLITE | MAP */}
           <div className="flex bg-white border border-[#CCCCCC] shadow-xs overflow-hidden text-[10px] font-bold">
             <button
@@ -478,26 +864,28 @@ export default function InvestigationMap({
             )}
           </div>
         </div>
+      )}
 
-        {/* Zoom & Fit Controls */}
-        <div className="flex flex-col bg-white border border-[#CCCCCC] shadow-xs text-[#111111]">
+      {/* ══ Always-Visible Zoom & Fit Controls (Top-Right) ══════════════ */}
+      <div className={`absolute z-30 flex flex-col font-mono shadow-2xl shadow-black/90 ${hideOverlays ? 'top-4 right-3' : 'top-[48px] right-3'}`}>
+        <div className="flex flex-col bg-[#0B131E] border border-[#1E293B] text-white rounded-xs overflow-hidden">
           <button
             onClick={() => mapRef.current?.zoomIn()}
-            className="w-8 h-8 flex items-center justify-center font-bold text-sm text-[#111111] hover:bg-[#F5F5F5] border-b border-[#E5E5E5] cursor-pointer"
+            className="w-7 h-7 flex items-center justify-center font-bold text-sm text-white hover:bg-white/10 border-b border-[#1E293B] cursor-pointer transition-colors"
             title="Zoom In"
           >
             +
           </button>
           <button
             onClick={() => mapRef.current?.zoomOut()}
-            className="w-8 h-8 flex items-center justify-center font-bold text-sm text-[#111111] hover:bg-[#F5F5F5] border-b border-[#E5E5E5] cursor-pointer"
+            className="w-7 h-7 flex items-center justify-center font-bold text-sm text-white hover:bg-white/10 border-b border-[#1E293B] cursor-pointer transition-colors"
             title="Zoom Out"
           >
             −
           </button>
           <button
             onClick={() => fitCameraToExtent(activeTab, 800)}
-            className="w-8 h-8 flex items-center justify-center font-bold text-[10px] text-[#111111] hover:bg-[#F5F5F5] cursor-pointer"
+            className="w-7 h-7 flex items-center justify-center font-bold text-[9px] text-white hover:bg-white/10 cursor-pointer transition-colors"
             title="Fit Investigation Extent"
           >
             FIT
@@ -505,8 +893,9 @@ export default function InvestigationMap({
         </div>
       </div>
 
-      {/* ══ Bottom-Left Contextual Legend HUD (Light, Compact, Stage-Aware) ═ */}
-      <div className="absolute bottom-3 left-3 z-30 pointer-events-none font-mono">
+      {/* ══ Bottom-Left Contextual Legend HUD (Shown when hideOverlays is false) ═ */}
+      {!hideOverlays && (
+        <div className="absolute bottom-3 left-3 z-30 pointer-events-none font-mono">
         <div className="bg-white/95 backdrop-blur-xs border border-[#CCCCCC] p-2.5 shadow-sm max-w-sm text-[#111111]">
           <div className="text-[9px] uppercase tracking-wider font-bold text-[#666666] mb-1.5 flex items-center justify-between">
             <span>
@@ -706,6 +1095,7 @@ export default function InvestigationMap({
           )}
         </div>
       </div>
+      )}
 
       {/* ══ Bottom-Right Attribution HUD ═════════════════════════════ */}
       <div className="absolute bottom-2 right-2 z-30 pointer-events-none flex flex-col items-end gap-1 font-mono text-[9px] text-[#666666]">

@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import SpilltraceLogo from '../common/SpilltraceLogo';
 import InvestigationMap from './InvestigationMap';
+import OilDetectionStage from './OilDetectionStage';
+import OriginReconstructionStage from './OriginReconstructionStage';
+import VesselAttributionStage from './VesselAttributionStage';
 import { SCENARIO_LIST } from '../../services/scenariosData.js';
 import { INITIAL_INCIDENTS } from '../../data/incidentsData.js';
 import {
@@ -161,6 +164,33 @@ export default function InvestigationWorkspace({
   // ─── Interactive Map Selection & Explanation State ──────────────
   const [selectedCandidateMmsi, setSelectedCandidateMmsi] = useState(null);
   const [highlightedFactor, setHighlightedFactor] = useState(null);
+
+  // ─── Reference Controls: Basemap, Unified Layer Visibility, Timeline ──
+  const [basemapMode, setBasemapMode] = useState('satellite');
+  const [headerLayersOpen, setHeaderLayersOpen] = useState(false);
+  const [visibleLayers, setVisibleLayers] = useState({
+    spill: true,
+    ais: true,
+    vesselTracks: true,
+    sarImage: true,
+    coastline: true,
+    oceanCurrents: true,
+    windVectors: true,
+    eez: true,
+    backwardDrift: true,
+    forwardDrift: true,
+    uncertaintyCone: true,
+    candidateVessels: true,
+    waveHeight: false,
+    sst: false,
+  });
+  const handleToggleLayer = useCallback((layerKey) => {
+    setVisibleLayers((prev) => ({
+      ...prev,
+      [layerKey]: !prev[layerKey],
+    }));
+  }, []);
+  const [timelineOffset, setTimelineOffset] = useState(0);
 
   // ─── Unified Canonical Investigation State (7 Sequential Stages) ──────
   const [investigationState, setInvestigationState] = useState({
@@ -487,13 +517,13 @@ export default function InvestigationWorkspace({
   if (!isOpen) return null;
 
   const tabs = [
-    '01 Archive',
-    '02 Detection',
-    '03 Slick Analysis',
-    '04 Drift & Origin',
-    '05 AIS Traffic',
-    '06 Evidence Fusion',
-    '07 Evidence Report',
+    '01 ARCHIVE',
+    '02 DETECTION',
+    '03 SLICK ANALYSIS',
+    '04 DRIFT & ORIGIN',
+    '05 AIS TRAFFIC',
+    '06 ATTRIBUTION',
+    '07 EVIDENCE REPORT',
   ];
   const tabKeys = ['01', '02', '03', '04', '05', '06', '07'];
   const activeTabKey = tabKeys[consoleTab] || '02';
@@ -504,6 +534,12 @@ export default function InvestigationWorkspace({
   const slickResult = investigationState.slick;
   const driftResult = investigationState.drift;
   const aisData = investigationState.aisTraffic;
+
+  const acqTime = s?.scene?.acquisitionTime
+    ? s.scene.acquisitionTime.replace('T', ' ').substring(0, 16) + ' UTC'
+    : '2024-06-15 05:42 UTC';
+  const incidentId = selectedIncident?.id || s?.id || 'INC-2024-0615-01';
+  const basin = selectedIncident?.basin || 'Bay of Bengal';
   const evidenceScores = investigationState.evidence || [];
   const ensembleRuns = investigationState.ensemble || [];
 
@@ -528,13 +564,6 @@ export default function InvestigationWorkspace({
     : (candidateList.find((e) => String(e.mmsi) === String(selectedCandidateMmsi)) || topCandidate);
 
   // ─── UI Helper Components ───────────────────────────────────────
-  const SyntheticBadge = () => (
-    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-white/10 text-white font-mono text-[9px] uppercase tracking-wider border border-white/20">
-      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-      DEMO / SYNTHETIC DATA
-    </span>
-  );
-
   const Stat = ({ label, value, unit }) => (
     <div className="flex flex-col">
       <span className="text-[10px] uppercase tracking-wider text-[#888888] mb-0.5">
@@ -599,29 +628,28 @@ export default function InvestigationWorkspace({
   );
 
   return (
-    <div className="w-full h-screen h-[100dvh] flex flex-col bg-white overflow-hidden font-sans">
+    <div className="w-full h-screen h-[100dvh] flex flex-col bg-[#070D14] overflow-hidden font-sans">
       
-      {/* ══ Top Operational Header (Full-Width, Non-Modal) ═════════ */}
-      <header className="w-full bg-[#111111] text-white px-4 sm:px-6 py-2.5 flex items-center justify-between shrink-0 border-b border-white/10 z-20">
+      {/* ══ Top Operational Header (Full-Width, Dedicated Forensic Workspace) ═════════ */}
+      <header className="w-full bg-[#111111] text-white px-4 sm:px-6 py-2.5 flex items-center justify-between shrink-0 border-b border-white/10 z-30 relative">
         <div className="flex items-center gap-3 min-w-0">
           <SpilltraceLogo />
-          <span className="font-semibold text-xs tracking-wider uppercase text-white/90 whitespace-nowrap">
-            Investigation Workspace
+          <span className="text-white/40 font-mono text-xs">|</span>
+          <span className="font-semibold text-xs tracking-wider uppercase text-white whitespace-nowrap">
+            {consoleTab === 1
+              ? 'FORENSIC MAP'
+              : consoleTab === 3
+              ? 'ORIGIN RECONSTRUCTION'
+              : consoleTab === 5
+              ? 'VESSEL ATTRIBUTION'
+              : 'INVESTIGATION WORKSPACE'}
           </span>
-          <span className="text-white/30 hidden sm:inline">·</span>
-          <span className="font-mono text-[11px] text-white/80 hidden sm:inline whitespace-nowrap">
-            {selectedIncident
-              ? `${selectedIncident.id} (${selectedIncident.basin})`
-              : 'INC-2026-001'}
+          <span className="text-white/30 hidden lg:inline font-mono text-xs">|</span>
+          <span className="font-mono text-[11px] text-white/70 hidden lg:inline whitespace-nowrap">
+            {consoleTab === 5
+              ? `Incident ID: ${incidentId} | ${acqTime} | ${basin} | Sentinel-1 (SAR)`
+              : `Sentinel-1 (SAR) | ${acqTime} | WGS 84 · EPSG:4326`}
           </span>
-          {s && (
-            <>
-              <span className="text-white/30 hidden md:inline">·</span>
-              <span className="font-mono text-[11px] text-white/60 hidden md:inline truncate max-w-sm">
-                {s.id}: {s.name}
-              </span>
-            </>
-          )}
           {!activeScenario && (
             <>
               <span className="text-white/30 hidden sm:inline">·</span>
@@ -631,7 +659,81 @@ export default function InvestigationWorkspace({
             </>
           )}
         </div>
+
         <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+          {/* Basemap Switcher: SATELLITE | MAP */}
+          <div className="flex bg-white/10 border border-white/20 text-[10px] font-mono rounded-xs overflow-hidden">
+            <button
+              onClick={() => setBasemapMode('satellite')}
+              className={`px-3 py-1 uppercase font-bold transition-all cursor-pointer ${
+                basemapMode === 'satellite'
+                  ? 'bg-white text-[#111111]'
+                  : 'text-white/80 hover:text-white hover:bg-white/10'
+              }`}
+              title="Satellite View"
+            >
+              SATELLITE
+            </button>
+            <button
+              onClick={() => setBasemapMode('map')}
+              className={`px-3 py-1 border-l border-white/20 uppercase font-bold transition-all cursor-pointer ${
+                basemapMode === 'map'
+                  ? 'bg-white text-[#111111]'
+                  : 'text-white/80 hover:text-white hover:bg-white/10'
+              }`}
+              title="Map View"
+            >
+              MAP
+            </button>
+          </div>
+
+          {/* Global Layers Dropdown Toggle */}
+          <div className="relative">
+            <button
+              onClick={() => setHeaderLayersOpen((prev) => !prev)}
+              className={`px-3 py-1 text-[10px] font-mono uppercase font-bold border transition-all cursor-pointer flex items-center gap-1.5 ${
+                headerLayersOpen
+                  ? 'bg-white text-[#111111] border-white'
+                  : 'bg-white/10 text-white/90 border-white/20 hover:bg-white/20 hover:text-white'
+              }`}
+              title="Toggle Global Layers Panel"
+            >
+              <span>LAYERS</span>
+              <span className="text-[8px]">{headerLayersOpen ? '▲' : '▼'}</span>
+            </button>
+
+            {headerLayersOpen && (
+              <div className="absolute right-0 mt-2 w-56 bg-[#0B131E] border border-[#1E293B] shadow-2xl shadow-black/90 p-3 space-y-2 text-[10px] uppercase font-mono z-50 text-white rounded-xs">
+                <div className="text-[9px] text-[#94A3B8] pb-1 border-b border-[#1E293B] tracking-wider">
+                  INVESTIGATION LAYERS
+                </div>
+                {Object.entries({
+                  spill: 'Detected Oil Slick',
+                  ais: 'AIS Vessels',
+                  vesselTracks: 'Vessel Tracks',
+                  sarImage: 'SAR Image',
+                  coastline: 'Coastline',
+                  oceanCurrents: 'Ocean Currents',
+                  windVectors: 'Wind Vectors',
+                  backwardDrift: 'Backward Drift',
+                  forwardDrift: 'Forward Drift',
+                  uncertaintyCone: 'Uncertainty Regions',
+                  eez: 'EEZ Boundary',
+                }).map(([k, label]) => (
+                  <label key={k} className="flex items-center justify-between p-1 hover:bg-white/5 cursor-pointer">
+                    <span className="text-white/90">{label}</span>
+                    <input
+                      type="checkbox"
+                      checked={visibleLayers[k] ?? true}
+                      onChange={() => handleToggleLayer(k)}
+                      className="accent-[#EF4444] cursor-pointer"
+                    />
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+
           {/* Quick Scenario Selector: Accessible from every tab */}
           <div className="flex items-center gap-1 bg-white/10 p-1 border border-white/20">
             <span className="text-[9px] font-mono uppercase text-white/50 px-1 hidden xl:inline">
@@ -653,29 +755,27 @@ export default function InvestigationWorkspace({
             ))}
           </div>
 
-          <SyntheticBadge />
           <button
             onClick={onClose}
-            className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white font-mono text-xs uppercase tracking-wider border border-white/20 transition-all cursor-pointer flex items-center gap-2"
+            className="px-3 py-1 bg-white/10 hover:bg-white/20 text-white font-mono text-xs uppercase tracking-wider border border-white/20 transition-all cursor-pointer flex items-center gap-1.5"
             title="Close Investigation & Return to Archive"
           >
-            <span className="hidden sm:inline">CLOSE INVESTIGATION</span>
-            <span className="sm:hidden">CLOSE</span>
+            <span className="hidden sm:inline">CLOSE</span>
             <span className="text-white/60 font-bold">✕</span>
           </button>
         </div>
       </header>
 
       {/* ══ Tab Navigation (Application-Level, Full-Width) ═════════ */}
-      <nav className="w-full bg-[#FAFAFA] border-b border-[#E5E5E5] px-4 sm:px-6 py-1.5 flex items-center gap-1.5 overflow-x-auto shrink-0 z-10">
+      <nav className="w-full bg-[#070D14] border-b border-[#1E293B] px-4 sm:px-6 py-1.5 flex items-center gap-1.5 overflow-x-auto shrink-0 z-10">
         {tabs.map((tab, idx) => (
           <button
             key={idx}
             onClick={() => setConsoleTab(idx)}
             className={`px-3 py-1.5 font-mono text-[11px] transition-all whitespace-nowrap cursor-pointer border ${
               consoleTab === idx
-                ? 'bg-[#111111] text-white border-[#111111] font-semibold shadow-xs'
-                : 'text-[#666666] border-transparent hover:text-[#111111] hover:bg-[#EEEEEE]'
+                ? 'bg-[#0F172A] text-white border-[#38BDF8] font-semibold shadow-xs'
+                : 'text-[#94A3B8] border-transparent hover:text-white hover:bg-[#0F172A]'
             }`}
           >
             {tab}
@@ -684,7 +784,7 @@ export default function InvestigationWorkspace({
       </nav>
 
       {/* ══ Workspace Core Area ═══════════════════════════════════ */}
-      <div className="flex-1 flex overflow-hidden bg-white">
+      <div className="flex-1 w-full h-full relative flex flex-col overflow-hidden bg-[#070D14]">
           {!activeScenario ? (
             /* Explicit Unmapped Incident / Observation State */
             <div className="max-w-3xl mx-auto py-12 text-center p-6 overflow-y-auto w-full">
@@ -746,8 +846,96 @@ export default function InvestigationWorkspace({
                 </div>
               </div>
             </div>
+          ) : consoleTab === 1 ? (
+            /* ══ STAGE 02: OIL DETECTION / FORENSIC MAP (Reference 2) ══════ */
+            <OilDetectionStage
+              scenario={s}
+              incident={selectedIncident}
+              visibleLayers={visibleLayers}
+              onToggleLayer={handleToggleLayer}
+              timelineOffset={timelineOffset}
+              onTimelineChange={setTimelineOffset}
+            >
+              <MapErrorBoundary>
+                <InvestigationMap
+                  investigationState={investigationState}
+                  activeTab="02"
+                  selectedCandidateMmsi={selectedCandidateMmsi || activeCandidate?.mmsi}
+                  onSelectCandidate={(mmsi) => setSelectedCandidateMmsi(mmsi)}
+                  highlightedFactor={highlightedFactor}
+                  onSelectFactor={(factor) => setHighlightedFactor(factor)}
+                  onFeatureSelect={handleFeatureSelect}
+                  basemapMode={basemapMode}
+                  onBasemapChange={setBasemapMode}
+                  visibleLayers={visibleLayers}
+                  onToggleLayer={handleToggleLayer}
+                  hideOverlays={true}
+                  showCallouts={true}
+                />
+              </MapErrorBoundary>
+            </OilDetectionStage>
+          ) : consoleTab === 3 ? (
+            /* ══ STAGE 04: ORIGIN RECONSTRUCTION (Reference 1) ═══════════ */
+            <OriginReconstructionStage
+              scenario={s}
+              incident={selectedIncident}
+              drift={driftResult}
+              visibleLayers={visibleLayers}
+              onToggleLayer={handleToggleLayer}
+              timelineOffset={timelineOffset}
+              onTimelineChange={setTimelineOffset}
+            >
+              <MapErrorBoundary>
+                <InvestigationMap
+                  investigationState={investigationState}
+                  activeTab="04"
+                  selectedCandidateMmsi={selectedCandidateMmsi || activeCandidate?.mmsi}
+                  onSelectCandidate={(mmsi) => setSelectedCandidateMmsi(mmsi)}
+                  highlightedFactor={highlightedFactor}
+                  onSelectFactor={(factor) => setHighlightedFactor(factor)}
+                  onFeatureSelect={handleFeatureSelect}
+                  basemapMode={basemapMode}
+                  onBasemapChange={setBasemapMode}
+                  visibleLayers={visibleLayers}
+                  onToggleLayer={handleToggleLayer}
+                  hideOverlays={true}
+                  showCallouts={true}
+                />
+              </MapErrorBoundary>
+            </OriginReconstructionStage>
+          ) : consoleTab === 5 ? (
+            /* ══ STAGE 06: VESSEL ATTRIBUTION (Reference 3) ══════════════ */
+            <VesselAttributionStage
+              scenario={s}
+              incident={selectedIncident}
+              drift={driftResult}
+              aisTraffic={aisData}
+              evidenceScores={evidenceScores}
+              selectedCandidateMmsi={selectedCandidateMmsi || activeCandidate?.mmsi}
+              onSelectCandidate={(mmsi) => setSelectedCandidateMmsi(mmsi)}
+              timelineOffset={timelineOffset}
+              onTimelineChange={setTimelineOffset}
+            >
+              <MapErrorBoundary>
+                <InvestigationMap
+                  investigationState={investigationState}
+                  activeTab="06"
+                  selectedCandidateMmsi={selectedCandidateMmsi || activeCandidate?.mmsi}
+                  onSelectCandidate={(mmsi) => setSelectedCandidateMmsi(mmsi)}
+                  highlightedFactor={highlightedFactor}
+                  onSelectFactor={(factor) => setHighlightedFactor(factor)}
+                  onFeatureSelect={handleFeatureSelect}
+                  basemapMode={basemapMode}
+                  onBasemapChange={setBasemapMode}
+                  visibleLayers={visibleLayers}
+                  onToggleLayer={handleToggleLayer}
+                  hideOverlays={true}
+                  showCallouts={true}
+                />
+              </MapErrorBoundary>
+            </VesselAttributionStage>
           ) : (
-            /* ══ SPATIAL INVESTIGATION WORKSPACE (Tabs 01–07) ══════ */
+            /* ══ 2-COLUMN WORKSPACE FOR TABS 01, 03, 05, 07 ══════════════ */
             <div className="flex-1 flex flex-col lg:flex-row h-full overflow-hidden w-full">
               
               {/* ── LEFT COLUMN: Interactive Investigation Map (~68%) ── */}
@@ -756,11 +944,17 @@ export default function InvestigationWorkspace({
                   <InvestigationMap
                     investigationState={investigationState}
                     activeTab={activeTabKey}
-                    selectedCandidateMmsi={selectedCandidateMmsi}
+                    selectedCandidateMmsi={selectedCandidateMmsi || activeCandidate?.mmsi}
                     onSelectCandidate={(mmsi) => setSelectedCandidateMmsi(mmsi)}
                     highlightedFactor={highlightedFactor}
                     onSelectFactor={(factor) => setHighlightedFactor(factor)}
                     onFeatureSelect={handleFeatureSelect}
+                    basemapMode={basemapMode}
+                    onBasemapChange={setBasemapMode}
+                    visibleLayers={visibleLayers}
+                    onToggleLayer={handleToggleLayer}
+                    hideOverlays={false}
+                    showCallouts={true}
                   />
                 </MapErrorBoundary>
               </div>
@@ -2650,21 +2844,23 @@ export default function InvestigationWorkspace({
           )}
         </div>
 
-        {/* ══ Status Footer ════════════════════════════════════════ */}
-        <div className="bg-[#FAFAFA] border-t border-[#E5E5E5] px-5 py-2 flex items-center justify-between shrink-0 font-mono text-[10px]">
-          <span className="text-[#888888] uppercase tracking-wider">
-            SPILLTRACE Maritime Geospatial Investigation Workspace
-          </span>
-          <div className="flex items-center gap-4">
-            <span className="text-[#777777]">
-              Case: {selectedIncident?.id || 'INC-2026-001'} · Scenario:{' '}
-              {activeScenario || 'UNAVAILABLE'}
+        {/* ══ Status Footer (Tabs 0, 2, 4, 6 only; full-bleed canvas on 1, 3, 5) ═════ */}
+        {consoleTab !== 1 && consoleTab !== 3 && consoleTab !== 5 && (
+          <div className="bg-[#070D14] border-t border-[#1E293B] px-5 py-1.5 flex items-center justify-between shrink-0 font-mono text-[10px] text-[#94A3B8]">
+            <span className="uppercase tracking-wider">
+              SPILLTRACE Maritime Geospatial Investigation Workspace
             </span>
-            <span className="text-[#111111] font-semibold uppercase">
-              WGS 84 · EPSG:4326
-            </span>
+            <div className="flex items-center gap-4">
+              <span className="text-[#64748B]">
+                Case: {selectedIncident?.id || 'INC-2026-001'} · Scenario:{' '}
+                {activeScenario || 'UNAVAILABLE'}
+              </span>
+              <span className="text-white font-semibold uppercase">
+                WGS 84 · EPSG:4326
+              </span>
+            </div>
           </div>
-        </div>
+        )}
 
     </div>
   );

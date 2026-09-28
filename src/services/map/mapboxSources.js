@@ -423,7 +423,8 @@ export function buildDriftGeoJson(scenario, driftResult, highlightedFactor = nul
   const isDriftFocus = highlightedFactor === 'drift';
   const spillCentroid = scenario.spill.centroid; // [lon, lat]
   const originCentroid = drift.originCentroid;   // [lon, lat]
-  const radiusKm = drift.originRadiusKm || 2.8;
+  const radiusKm = drift.originRadiusKm || 3.2;
+  const duration = drift.durationHours || 12;
 
   const features = [];
 
@@ -432,8 +433,7 @@ export function buildDriftGeoJson(scenario, driftResult, highlightedFactor = nul
   if (Array.isArray(drift.trajectory) && drift.trajectory.length > 1) {
     trajectoryLonLats = drift.trajectory; // [lon, lat]
   } else {
-    // Generate intermediate advection steps
-    const steps = 4;
+    const steps = 6;
     for (let i = 0; i <= steps; i++) {
       const frac = i / steps;
       trajectoryLonLats.push([
@@ -443,7 +443,7 @@ export function buildDriftGeoJson(scenario, driftResult, highlightedFactor = nul
     }
   }
 
-  // 1. Central Backward Drift Trajectory Line
+  // 1. Central Nominal Backward Drift Trajectory Line (Reference Track)
   features.push({
     type: 'Feature',
     geometry: {
@@ -452,40 +452,104 @@ export function buildDriftGeoJson(scenario, driftResult, highlightedFactor = nul
     },
     properties: {
       type: 'drift-trajectory',
-      durationHours: drift.durationHours || 12,
+      durationHours: duration,
       distanceNm: drift.driftDistanceNm || 16.8,
       isDriftFocus,
     },
   });
 
-  // 2. Ensemble Fan Trajectories (8 Realizations Showing Monte Carlo Dispersion)
-  const ensembleCount = 8;
-  const perpBearing = ((scenario?.forcing?.windDirectionDeg || 225) + 90) % 360;
+  // 2. High-Density Lagrangian Ensemble Streamlines (24 Curved Multi-Color Particle Tracks)
+  // Matching Reference 1: Transitioning from Red (at slick) -> Magenta -> Orange -> Gold/Yellow (at origin)
+  const ensembleCount = 24;
+  const dLon = originCentroid[0] - spillCentroid[0];
+  const dLat = originCentroid[1] - spillCentroid[1];
+  const mainAngle = Math.atan2(dLat, dLon);
+  const perpAngle = mainAngle + Math.PI / 2;
+
+  const colors = [
+    '#EF4444', // Red near slick
+    '#D946EF', // Magenta/Purple
+    '#F97316', // Orange
+    '#FACC15', // Gold/Yellow near origin
+  ];
+
   for (let e = 0; e < ensembleCount; e++) {
     const spreadFrac = (e - (ensembleCount - 1) / 2) / ((ensembleCount - 1) / 2); // -1.0 to +1.0
-    const offsetKm = spreadFrac * (radiusKm * 0.95);
-    const [pLat, pLon] = projectPoint(originCentroid[1], originCentroid[0], offsetKm, perpBearing);
-    
-    // Slight lateral curvature
-    const midFrac = 0.5;
-    const midLat = spillCentroid[1] + midFrac * (originCentroid[1] - spillCentroid[1]) + Math.sin(e * 1.3) * 0.006;
-    const midLon = spillCentroid[0] + midFrac * (originCentroid[0] - spillCentroid[0]) + Math.cos(e * 1.3) * 0.006;
+    // Wider dispersion near origin (backward diffusion)
+    const endOffsetKm = spreadFrac * (radiusKm * 1.15);
+    // Slight dispersion at slick boundary
+    const startOffsetKm = spreadFrac * (scenario.spill?.minorAxisKm || 1.8) * 0.45;
 
-    features.push({
-      type: 'Feature',
-      geometry: {
-        type: 'LineString',
-        coordinates: [spillCentroid, [midLon, midLat], [pLon, pLat]],
-      },
-      properties: {
-        type: 'drift-ensemble-fan',
-        memberIndex: e + 1,
-      },
+    const latKm = 110.574;
+    const lonKm = 111.32 * Math.cos((spillCentroid[1] * Math.PI) / 180);
+
+    const sLon = spillCentroid[0] + (Math.cos(perpAngle) * startOffsetKm) / lonKm;
+    const sLat = spillCentroid[1] + (Math.sin(perpAngle) * startOffsetKm) / latKm;
+
+    const eLon = originCentroid[0] + (Math.cos(perpAngle) * endOffsetKm) / lonKm;
+    const eLat = originCentroid[1] + (Math.sin(perpAngle) * endOffsetKm) / latKm;
+
+    // Build 16 interpolated points along a hydrodynamic bezier curve with turbulent eddy perturbation
+    const numPts = 16;
+    const curveCoords = [];
+    const lateralCurvature = Math.sin(e * 0.42) * 0.008 + (spreadFrac * 0.005);
+
+    for (let p = 0; p <= numPts; p++) {
+      const t = p / numPts; // 0.0 at slick, 1.0 at origin
+      const baseLon = (1 - t) * sLon + t * eLon;
+      const baseLat = (1 - t) * sLat + t * eLat;
+      const bend = Math.sin(t * Math.PI) * lateralCurvature;
+      const eddyLon = bend * Math.cos(perpAngle) + Math.cos(t * 12 + e) * 0.0015 * t;
+      const eddyLat = bend * Math.sin(perpAngle) + Math.sin(t * 12 + e) * 0.0015 * t;
+      curveCoords.push([baseLon + eddyLon, baseLat + eddyLat]);
+    }
+
+    // Break into 4 color segments matching temporal evolution
+    const ptsPerSeg = 4;
+    for (let s = 0; s < 4; s++) {
+      const segCoords = curveCoords.slice(s * ptsPerSeg, (s + 1) * ptsPerSeg + 1);
+      if (segCoords.length >= 2) {
+        features.push({
+          type: 'Feature',
+          geometry: {
+            type: 'LineString',
+            coordinates: segCoords,
+          },
+          properties: {
+            type: 'drift-ensemble-fan',
+            color: colors[s],
+            opacity: 0.85 - (Math.abs(spreadFrac) * 0.25),
+            isNominal: e === Math.floor(ensembleCount / 2),
+            memberIndex: e + 1,
+            timeSegment: s,
+          },
+        });
+      }
+    }
+
+    // Discrete Lagrangian Monte Carlo Particle Nodes along path
+    const particleIndices = [2, 6, 10, 14];
+    particleIndices.forEach((pIdx) => {
+      const segIdx = Math.min(3, Math.floor(pIdx / 4));
+      const ptCoord = curveCoords[pIdx];
+      if (ptCoord) {
+        features.push({
+          type: 'Feature',
+          geometry: {
+            type: 'Point',
+            coordinates: ptCoord,
+          },
+          properties: {
+            type: 'drift-particle-node',
+            color: colors[segIdx],
+            radius: 2.2 + ((e + pIdx) % 3) * 0.6,
+          },
+        });
+      }
     });
   }
 
-  // 3. Intermediate Advection Points, Envelopes & Time Markers (T0 to T-12h)
-  const duration = drift.durationHours || 12;
+  // 3. Intermediate Advection Expanding Envelopes & Time Markers (T0 to T-12h)
   const numSteps = 4;
   for (let idx = 0; idx <= numSteps; idx++) {
     const frac = idx / numSteps;
@@ -554,39 +618,84 @@ export function buildDriftGeoJson(scenario, driftResult, highlightedFactor = nul
     });
   }
 
-  // 5. Forward Dispersion Forecast Envelope & Vectors
-  const fwd = scenario?.drift?.forward;
-  if (fwd?.forwardEnvelope) {
-    const fwdLon = spillCentroid[0] + (spillCentroid[0] - originCentroid[0]) * 0.50;
-    const fwdLat = spillCentroid[1] + (spillCentroid[1] - originCentroid[1]) * 0.50;
+  // 5. Forward Dispersion Forecast Cone & Waypoints (+24h to +72h)
+  // Matching Reference 1: Extends northeast with white dashed centerline and waypoint pips
+  const fwdBearingDeg = ((mainAngle * 180) / Math.PI + 180 + 360) % 360;
+  const fwdDistTotalKm = 55.0;
 
-    // Forward trajectory dashed line
+  const [fwd24Lat, fwd24Lon] = projectPoint(spillCentroid[1], spillCentroid[0], 18.0, fwdBearingDeg);
+  const [fwd48Lat, fwd48Lon] = projectPoint(spillCentroid[1], spillCentroid[0], 36.0, fwdBearingDeg);
+  const [fwd72Lat, fwd72Lon] = projectPoint(spillCentroid[1], spillCentroid[0], fwdDistTotalKm, fwdBearingDeg);
+
+  const perpFwdBearing = (fwdBearingDeg + 90) % 360;
+  const oppPerpFwdBearing = (fwdBearingDeg - 90 + 360) % 360;
+
+  const [coneLeft72Lat, coneLeft72Lon] = projectPoint(fwd72Lat, fwd72Lon, 11.5, oppPerpFwdBearing);
+  const [coneRight72Lat, coneRight72Lon] = projectPoint(fwd72Lat, fwd72Lon, 11.5, perpFwdBearing);
+  const [coneLeft48Lat, coneLeft48Lon] = projectPoint(fwd48Lat, fwd48Lon, 7.5, oppPerpFwdBearing);
+  const [coneRight48Lat, coneRight48Lon] = projectPoint(fwd48Lat, fwd48Lon, 7.5, perpFwdBearing);
+  const [coneLeft24Lat, coneLeft24Lon] = projectPoint(fwd24Lat, fwd24Lon, 4.0, oppPerpFwdBearing);
+  const [coneRight24Lat, coneRight24Lon] = projectPoint(fwd24Lat, fwd24Lon, 4.0, perpFwdBearing);
+
+  const forecastConePolygon = [
+    spillCentroid,
+    [coneLeft24Lon, coneLeft24Lat],
+    [coneLeft48Lon, coneLeft48Lat],
+    [coneLeft72Lon, coneLeft72Lat],
+    [fwd72Lon, fwd72Lat],
+    [coneRight72Lon, coneRight72Lat],
+    [coneRight48Lon, coneRight48Lat],
+    [coneRight24Lon, coneRight24Lat],
+    spillCentroid,
+  ];
+
+  // Forward Cone Fill & Outline
+  features.push({
+    type: 'Feature',
+    geometry: {
+      type: 'Polygon',
+      coordinates: [forecastConePolygon],
+    },
+    properties: { type: 'drift-forward-envelope' },
+  });
+
+  // Forward Centerline (White dashed line)
+  features.push({
+    type: 'Feature',
+    geometry: {
+      type: 'LineString',
+      coordinates: [spillCentroid, [fwd24Lon, fwd24Lat], [fwd48Lon, fwd48Lat], [fwd72Lon, fwd72Lat]],
+    },
+    properties: { type: 'drift-forward-line' },
+  });
+
+  // Forward Waypoint Nodes (+24h, +48h, +72h)
+  const fwdWaypoints = [
+    { coords: [fwd24Lon, fwd24Lat], label: '+24h' },
+    { coords: [fwd48Lon, fwd48Lat], label: '+48h' },
+    { coords: [fwd72Lon, fwd72Lat], label: '+72h' },
+  ];
+
+  fwdWaypoints.forEach(({ coords, label }) => {
     features.push({
       type: 'Feature',
-      geometry: {
-        type: 'LineString',
-        coordinates: [spillCentroid, [fwdLon, fwdLat]],
-      },
-      properties: { type: 'drift-forward-line' },
-    });
-
-    // Forward dispersion envelope polygon
-    features.push({
-      type: 'Feature',
-      geometry: { type: 'Polygon', coordinates: [fwd.forwardEnvelope] },
-      properties: { type: 'drift-forward-envelope' },
-    });
-
-    // Forward forecast label
-    features.push({
-      type: 'Feature',
-      geometry: { type: 'Point', coordinates: [fwdLon, fwdLat] },
+      geometry: { type: 'Point', coordinates: coords },
       properties: {
-        type: 'drift-forward-label',
-        label: 'FORECAST +6h (+6.6 NM)',
+        type: 'drift-forward-node',
+        label,
       },
     });
-  }
+  });
+
+  // Forward Forecast Callout Label
+  features.push({
+    type: 'Feature',
+    geometry: { type: 'Point', coordinates: [fwd48Lon, fwd48Lat] },
+    properties: {
+      type: 'drift-forward-label',
+      label: 'FORECAST DRIFT (Next 24–72 h)',
+    },
+  });
 
   return { type: 'FeatureCollection', features };
 }
@@ -600,8 +709,7 @@ export function buildMetoceanGeoJson(scenario) {
 
   const features = [];
 
-  // 1. Distributed Regional Wind & Current Vector Grid (6 offshore positions)
-  // Offsets in km [dEastKm, dNorthKm] distributed across the maritime bounding area
+  // 1. Distributed Regional Wind & Current Vector Grid (12 offshore positions across maritime theater)
   const gridOffsets = [
     [18, 14],
     [26, -6],
@@ -609,6 +717,12 @@ export function buildMetoceanGeoJson(scenario) {
     [32, 10],
     [-8, 22],
     [24, 28],
+    [-15, -10],
+    [5, -28],
+    [38, -15],
+    [-22, 12],
+    [10, 32],
+    [-18, 38],
   ];
 
   gridOffsets.forEach(([dE, dN], i) => {
@@ -725,7 +839,8 @@ export function buildAisTracksGeoJson(
   aisData,
   selectedCandidateMmsi,
   highlightedFactor = null,
-  isEvidenceStage = false
+  isEvidenceStage = false,
+  activeTab = '02'
 ) {
   const tracks = aisData?.tracks || scenario?.aisTraffic?.tracks;
   if (!tracks || !tracks.length) return EMPTY_FC;
@@ -733,13 +848,34 @@ export function buildAisTracksGeoJson(
   const isSyn004 = scenario?.id === 'SYN-004';
   const hasSelection = isEvidenceStage && !isSyn004 && Boolean(selectedCandidateMmsi);
 
+  const getTrackColor = (tIdx, isCand) => {
+    if (activeTab === '02') {
+      // Reference 2: Vessel A is orange, Vessel B is blue, Vessel C is green
+      const colors = ['#F97316', '#38BDF8', '#10B981', '#E2E8F0', '#F59E0B'];
+      return colors[tIdx % colors.length];
+    }
+    if (activeTab === '04') {
+      // Reference 1: Vessel A is green, Vessel B is slate/gray, Vessel C is green
+      const colors = ['#10B981', '#94A3B8', '#10B981', '#94A3B8'];
+      return colors[tIdx % colors.length];
+    }
+    if (activeTab === '06' || activeTab === '07') {
+      // Reference 3: Candidate 1 is red, Candidate 2 is blue, Candidate 3 is green, etc.
+      if (isCand || tIdx === 0) return '#EF4444';
+      const colors = ['#EF4444', '#38BDF8', '#10B981', '#CBD5E1', '#F59E0B'];
+      return colors[tIdx % colors.length];
+    }
+    return isCand ? '#FFD54F' : '#42A5F5';
+  };
+
   const features = [];
 
-  for (const track of tracks) {
-    if (!track.positions || track.positions.length < 2) continue;
+  tracks.forEach((track, tIdx) => {
+    if (!track.positions || track.positions.length < 2) return;
 
     const isCandidate = isEvidenceStage && !isSyn004 && String(track.mmsi) === String(selectedCandidateMmsi);
     const vName = track.vesselName || track.name || 'VESSEL';
+    const trackColor = getTrackColor(tIdx, isCandidate);
 
     if (track.hasAisGap && track.aisGap) {
       // Split into pre-gap and post-gap segments
@@ -766,6 +902,7 @@ export function buildAisTracksGeoJson(
             segment: 'pre-gap',
             mmsi: track.mmsi,
             vesselName: vName,
+            color: trackColor,
             isCandidate,
             hasSelection,
           },
@@ -781,6 +918,7 @@ export function buildAisTracksGeoJson(
             segment: 'post-gap',
             mmsi: track.mmsi,
             vesselName: vName,
+            color: trackColor,
             isCandidate,
             hasSelection,
           },
@@ -797,6 +935,7 @@ export function buildAisTracksGeoJson(
           segment: 'continuous',
           mmsi: track.mmsi,
           vesselName: vName,
+          color: trackColor,
           isCandidate,
           hasSelection,
         },
@@ -813,13 +952,14 @@ export function buildAisTracksGeoJson(
           properties: {
             type: 'track-pip',
             mmsi: track.mmsi,
+            color: trackColor,
             label: `${timeStr} · ${Math.round(p.sog || 0)} kn`,
             isCandidate,
           },
         });
       }
     });
-  }
+  });
 
   return { type: 'FeatureCollection', features };
 }
@@ -902,7 +1042,8 @@ export function buildVesselsGeoJson(
   scenario,
   aisData,
   selectedCandidateMmsi,
-  showCandidateTags = false
+  showCandidateTags = false,
+  activeTab = '02'
 ) {
   const tracks = aisData?.tracks || scenario?.aisTraffic?.tracks;
   if (!tracks || !tracks.length) return EMPTY_FC;
@@ -910,17 +1051,33 @@ export function buildVesselsGeoJson(
   const isSyn004 = scenario?.id === 'SYN-004';
   const features = [];
 
-  for (const track of tracks) {
-    if (!track.positions || !track.positions.length) continue;
+  tracks.forEach((track, tIdx) => {
+    if (!track.positions || !track.positions.length) return;
     const lastPos = track.positions[track.positions.length - 1];
-    if (!lastPos) continue;
+    if (!lastPos) return;
 
     const isCandidate = showCandidateTags && !isSyn004 && String(track.mmsi) === String(selectedCandidateMmsi);
 
-    // In Stage 06 Evidence Fusion & Stage 07 Dossier, anchor the candidate vessel symbol at its CPA position
-    // so the forensic CPA tie-line directly connects the reconstructed origin to the candidate vessel icon!
     let activePos = lastPos;
-    if (showCandidateTags && !isSyn004) {
+    if (activeTab === '02') {
+      // Stage 02: Pin to observed position closest to detected slick centroid
+      const slickC = scenario?.spill?.centroid;
+      if (slickC && track.positions.length) {
+        let minD = Infinity;
+        let bestP = null;
+        for (const p of track.positions) {
+          if (!p.isGap) {
+            const d = haversineDistanceNm(p.lat, p.lon, slickC[1], slickC[0]);
+            if (d < minD) {
+              minD = d;
+              bestP = p;
+            }
+          }
+        }
+        if (bestP) activePos = bestP;
+      }
+    } else if (activeTab === '04' || activeTab === '06' || activeTab === '07' || showCandidateTags) {
+      // Pin to position closest to reconstructed origin centroid
       const origin = scenario?.drift?.backward?.originCentroid;
       if (origin && track.positions.length) {
         let minD = Infinity;
@@ -997,7 +1154,7 @@ export function buildVesselsGeoJson(
         },
       });
     }
-  }
+  });
 
   return { type: 'FeatureCollection', features };
 }
@@ -1261,11 +1418,15 @@ export function getMapDataForStage(investigationState, activeTab = '02', options
       break;
 
     case '02':
-      // 02 DETECTION:
-      // Allowed: SAR scene footprint, detection/segmentation anomaly, centroid, classification.
-      // Forbidden: reconstructed origin, backward drift, wind/current vectors, AIS tracks, vessel positions, candidate tags, CPA, evidence scores, candidate annotations.
+      // 02 DETECTION (Reference 2):
+      // Allowed: SAR scene footprint, detected slick polygon & centroid,
+      // AIS vessels & tracks (last 24h), metocean vectors (toggleable).
       data[SOURCES.SAR] = buildSarFootprintGeoJson(scenario);
-      data[SOURCES.SEGMENTATION] = buildSegmentationGeoJson(detection ? { ...scenario, spill: detection } : scenario);
+      data[SOURCES.SEGMENTATION] = EMPTY_FC; // Reference 2: no fake look-alikes
+      data[SOURCES.SLICK] = buildSlickGeoJson(slick ? { ...scenario, spill: slick } : scenario, false);
+      data[SOURCES.AIS_TRACKS] = buildAisTracksGeoJson(scenario, aisTraffic, null, null, false, '02');
+      data[SOURCES.VESSELS] = buildVesselsGeoJson(scenario, aisTraffic, null, false, '02');
+      data[SOURCES.METOCEAN] = buildMetoceanGeoJson(scenario);
       break;
 
     case '03':
@@ -1277,13 +1438,16 @@ export function getMapDataForStage(investigationState, activeTab = '02', options
       break;
 
     case '04':
-      // 04 DRIFT & ORIGIN:
-      // Allowed: slick, reconstructed origin, backward drift trajectory, origin uncertainty, wind vectors, current vectors, metocean information, SYN-005 ensemble trajectories.
-      // Forbidden: AIS vessel tracks, candidate vessel labels, CPA lines, evidence scores, candidate ranking.
+      // 04 DRIFT & ORIGIN (Reference 1):
+      // Allowed: slick, reconstructed origin, backward drift trajectory, origin uncertainty,
+      // wind vectors, current vectors, metocean information, AIS tracks & candidate vessels (Reference 1 layer control),
+      // SYN-005 ensemble trajectories.
       data[SOURCES.SLICK] = buildSlickGeoJson(slick ? { ...scenario, spill: slick } : scenario, false);
       data[SOURCES.ORIGIN] = buildOriginGeoJson(scenario, drift, highlightedFactor);
       data[SOURCES.DRIFT] = buildDriftGeoJson(scenario, drift, highlightedFactor);
       data[SOURCES.METOCEAN] = buildMetoceanGeoJson(scenario);
+      data[SOURCES.AIS_TRACKS] = buildAisTracksGeoJson(scenario, aisTraffic, null, null, false, '04');
+      data[SOURCES.VESSELS] = buildVesselsGeoJson(scenario, aisTraffic, null, false, '04');
       if (scenario.id === 'SYN-005') {
         data[SOURCES.ENSEMBLE] = buildEnsembleGeoJson(scenario, ensemble);
       }
@@ -1406,15 +1570,20 @@ export function computeTabBounds(
       });
     }
   } else if (activeTab === '02') {
-    // Tab 02: Detected slick / anomaly + incident + relevant SAR context
-    // DO NOT fit the full SAR swath if it causes the detection to become tiny!
-    if (sLon != null && sLat != null) extend(sLon, sLat);
+    // Tab 02: Detected slick + surrounding AIS vessels and their tracks
+    if (sLon != null && sLat != null) {
+      extend(sLon - 0.16, sLat - 0.10);
+      extend(sLon + 0.16, sLat + 0.10);
+    }
     if (spill?.polygon) extendRing(spill.polygon);
-    const regions = getDeterministicSegmentation(scenario);
-    if (regions?.length) {
-      regions.forEach((r) => {
-        if (r.centroid) extend(r.centroid[1], r.centroid[0]);
-        if (r.polygon) r.polygon.forEach((pt) => extend(pt[1], pt[0]));
+    if (tracks?.length) {
+      tracks.forEach((t) => {
+        (t.positions || []).forEach((p) => {
+          if (sLat != null && sLon != null) {
+            const d = haversineDistanceNm(p.lat, p.lon, sLat, sLon);
+            if (d <= 22) extend(p.lon, p.lat);
+          }
+        });
       });
     }
   } else if (activeTab === '03') {

@@ -152,7 +152,7 @@ const scenario1 = {
         destination: 'CHITTAGONG',
         navStatus: 'Under way using engine',
         aisClass: 'Class A',
-        positions: generateTrackPositions(11.02, 80.01, 38, 12.4, '2026-06-17T18:00:00Z', 24),
+        positions: generateTrackPositions(11.04, 80.06, 38, 12.4, '2026-06-17T18:00:00Z', 24),
         hasAisGap: false,
         aisGap: null,
       },

@@ -539,14 +539,19 @@ export function registerInvestigationLayers(map) {
       filter: ['==', ['get', 'type'], 'origin-containment-ring'],
       slot,
       paint: {
-        'fill-color': '#00E676',
+        'fill-color': [
+          'case',
+          ['==', ['get', 'tier'], 50],
+          '#EAB308',
+          '#10B981',
+        ],
         'fill-opacity': [
           'case',
           ['==', ['get', 'tier'], 50],
-          0.20,
+          0.15,
           ['==', ['get', 'tier'], 75],
-          0.12,
-          0.06,
+          0.10,
+          0.16,
         ],
       },
     });
@@ -559,14 +564,19 @@ export function registerInvestigationLayers(map) {
       filter: ['==', ['get', 'type'], 'origin-containment-ring'],
       slot,
       paint: {
-        'line-color': '#00E676',
+        'line-color': [
+          'case',
+          ['==', ['get', 'tier'], 50],
+          '#EAB308',
+          '#10B981',
+        ],
         'line-width': [
           'case',
           ['==', ['get', 'tier'], 50],
           2.0,
           ['==', ['get', 'tier'], 75],
           1.6,
-          1.3,
+          2.2,
         ],
         'line-dasharray': [4, 3],
       },
@@ -602,10 +612,10 @@ export function registerInvestigationLayers(map) {
       filter: ['==', ['get', 'type'], 'origin-centroid'],
       slot,
       paint: {
-        'circle-radius': 6.0,
-        'circle-color': '#00E676',
+        'circle-radius': 6.5,
+        'circle-color': '#EF4444',
         'circle-stroke-color': '#FFFFFF',
-        'circle-stroke-width': 2.2,
+        'circle-stroke-width': 2.0,
       },
     });
   }
@@ -632,7 +642,7 @@ export function registerInvestigationLayers(map) {
   }
 
   // ─── 7. Backward Drift Layers ─────────────────────────────────────────
-  // Stochastic Ensemble Dispersion Fan Lines
+  // Stochastic Ensemble Dispersion Fan Lines (Vibrant multi-color Lagrangian streamlines)
   if (!map.getLayer('drift-ensemble-fan-line')) {
     map.addLayer({
       id: 'drift-ensemble-fan-line',
@@ -641,10 +651,26 @@ export function registerInvestigationLayers(map) {
       filter: ['==', ['get', 'type'], 'drift-ensemble-fan'],
       slot,
       paint: {
-        'line-color': '#4DB6AC',
-        'line-width': 1.1,
-        'line-dasharray': [3, 4],
-        'line-opacity': 0.35,
+        'line-color': ['coalesce', ['get', 'color'], '#4DB6AC'],
+        'line-width': ['case', ['get', 'isNominal'], 2.6, 1.4],
+        'line-opacity': ['coalesce', ['get', 'opacity'], 0.85],
+      },
+    });
+  }
+  // Discrete Lagrangian Monte Carlo Particle Nodes
+  if (!map.getLayer('drift-particle-node-circle')) {
+    map.addLayer({
+      id: 'drift-particle-node-circle',
+      source: SOURCES.DRIFT,
+      type: 'circle',
+      filter: ['==', ['get', 'type'], 'drift-particle-node'],
+      slot,
+      paint: {
+        'circle-radius': ['coalesce', ['get', 'radius'], 3.0],
+        'circle-color': ['coalesce', ['get', 'color'], '#FACC15'],
+        'circle-stroke-color': '#FFFFFF',
+        'circle-stroke-width': 0.8,
+        'circle-opacity': 0.95,
       },
     });
   }
@@ -745,21 +771,7 @@ export function registerInvestigationLayers(map) {
       },
     });
   }
-  // Forward Dispersion Forecast Layers
-  if (!map.getLayer('drift-forward-line')) {
-    map.addLayer({
-      id: 'drift-forward-line',
-      source: SOURCES.DRIFT,
-      type: 'line',
-      filter: ['==', ['get', 'type'], 'drift-forward-line'],
-      slot,
-      paint: {
-        'line-color': '#29B6F6',
-        'line-width': 1.8,
-        'line-dasharray': [5, 4],
-      },
-    });
-  }
+  // Forward Dispersion Forecast Layers (+24h to +72h)
   if (!map.getLayer('drift-forward-envelope-fill')) {
     map.addLayer({
       id: 'drift-forward-envelope-fill',
@@ -769,7 +781,7 @@ export function registerInvestigationLayers(map) {
       slot,
       paint: {
         'fill-color': '#0288D1',
-        'fill-opacity': 0.12,
+        'fill-opacity': 0.18,
       },
     });
   }
@@ -781,9 +793,59 @@ export function registerInvestigationLayers(map) {
       filter: ['==', ['get', 'type'], 'drift-forward-envelope'],
       slot,
       paint: {
-        'line-color': '#29B6F6',
-        'line-width': 1.6,
+        'line-color': '#38BDF8',
+        'line-width': 1.8,
+        'line-dasharray': [5, 4],
+      },
+    });
+  }
+  if (!map.getLayer('drift-forward-line')) {
+    map.addLayer({
+      id: 'drift-forward-line',
+      source: SOURCES.DRIFT,
+      type: 'line',
+      filter: ['==', ['get', 'type'], 'drift-forward-line'],
+      slot,
+      paint: {
+        'line-color': '#FFFFFF',
+        'line-width': 2.0,
         'line-dasharray': [4, 4],
+      },
+    });
+  }
+  if (!map.getLayer('drift-forward-node-circle')) {
+    map.addLayer({
+      id: 'drift-forward-node-circle',
+      source: SOURCES.DRIFT,
+      type: 'circle',
+      filter: ['==', ['get', 'type'], 'drift-forward-node'],
+      slot,
+      paint: {
+        'circle-radius': 4.5,
+        'circle-color': '#38BDF8',
+        'circle-stroke-color': '#FFFFFF',
+        'circle-stroke-width': 1.8,
+      },
+    });
+  }
+  if (!map.getLayer('drift-forward-node-symbol')) {
+    map.addLayer({
+      id: 'drift-forward-node-symbol',
+      source: SOURCES.DRIFT,
+      type: 'symbol',
+      filter: ['==', ['get', 'type'], 'drift-forward-node'],
+      slot,
+      layout: {
+        'text-field': ['get', 'label'],
+        'text-size': 9.5,
+        'text-anchor': 'left',
+        'text-offset': [0.8, 0],
+        'text-allow-overlap': true,
+      },
+      paint: {
+        'text-color': '#BAE6FD',
+        'text-halo-color': '#0A1118',
+        'text-halo-width': 2.0,
       },
     });
   }
@@ -981,26 +1043,26 @@ export function registerInvestigationLayers(map) {
       slot,
       paint: {
         'line-color': [
-          'case',
-          ['get', 'isCandidate'],
-          '#FFD54F',
-          '#42A5F5',
+          'coalesce',
+          ['get', 'color'],
+          ['case', ['get', 'isCandidate'], '#FFD54F', '#42A5F5'],
         ],
         'line-width': [
           'case',
           ['get', 'isCandidate'],
-          2.8,
+          2.6,
           ['get', 'hasSelection'],
-          1.2,
-          1.5,
+          1.4,
+          2.0,
         ],
+        'line-dasharray': [4, 3],
         'line-opacity': [
           'case',
           ['get', 'isCandidate'],
           1.0,
           ['get', 'hasSelection'],
-          0.25,
-          0.55,
+          0.35,
+          0.85,
         ],
       },
     });
@@ -1014,7 +1076,7 @@ export function registerInvestigationLayers(map) {
       slot,
       paint: {
         'circle-radius': ['case', ['get', 'isCandidate'], 2.5, 1.8],
-        'circle-color': ['case', ['get', 'isCandidate'], '#FFD54F', '#90CAF9'],
+        'circle-color': ['coalesce', ['get', 'color'], ['case', ['get', 'isCandidate'], '#FFD54F', '#90CAF9']],
         'circle-opacity': 0.85,
       },
     });
@@ -1161,6 +1223,9 @@ export function registerInvestigationLayers(map) {
           16, 1.05,
         ],
       },
+      paint: {
+        'icon-opacity': 0, // Hidden: replaced by genuine 3D vessel layer (zero duplicate icons)
+      },
     });
   }
   if (!map.getLayer('candidate-tag-symbol')) {
@@ -1293,6 +1358,7 @@ const LAYER_GROUPS = {
   ],
   drift: [
     'drift-ensemble-fan-line',
+    'drift-particle-node-circle',
     'drift-envelope-fill',
     'drift-envelope-line',
     'drift-trajectory-line',
@@ -1302,6 +1368,8 @@ const LAYER_GROUPS = {
     'drift-forward-line',
     'drift-forward-envelope-fill',
     'drift-forward-envelope-line',
+    'drift-forward-node-circle',
+    'drift-forward-node-symbol',
     'drift-forward-label-symbol',
   ],
   metocean: ['metocean-wind-line', 'metocean-wind-symbol', 'metocean-current-line', 'metocean-current-symbol'],
@@ -1354,8 +1422,8 @@ export function updateMapboxLayerVisibility(
   const showSeg = (visibleLayers.spill ?? true) && tab === '02';
   setLayersVisibility(map, LAYER_GROUPS.segmentation, showSeg);
 
-  // 4. Characterized Slick / Observation Geometry (Tabs 01, 03–07)
-  const showSlick = (visibleLayers.spill ?? true) && (tab === '01' || tab === '03' || tab === '04' || tab === '05' || tab === '06' || tab === '07');
+  // 4. Characterized Slick / Observation Geometry (Tabs 01–07)
+  const showSlick = (visibleLayers.spill ?? true) && (tab === '01' || tab === '02' || tab === '03' || tab === '04' || tab === '05' || tab === '06' || tab === '07');
   setLayersVisibility(map, LAYER_GROUPS.slick, showSlick);
 
   // 4b. Slick Measurement Axes (Tab 03 only)
@@ -1367,12 +1435,12 @@ export function updateMapboxLayerVisibility(
   setLayersVisibility(map, LAYER_GROUPS.drift, showDrift);
   setLayersVisibility(map, LAYER_GROUPS.origin, showDrift);
 
-  // 6. Metocean Forcing Vectors (Tabs 04 & 06 — NOT Tab 01, 02, 03, 05, or 07)
-  const showMetocean = (visibleLayers.metocean ?? true) && (tab === '04' || tab === '06');
+  // 6. Metocean Forcing Vectors (Tabs 02, 04 & 06)
+  const showMetocean = ((visibleLayers.metocean ?? true) || (visibleLayers.oceanCurrents ?? false) || (visibleLayers.windVectors ?? false)) && (tab === '02' || tab === '04' || tab === '06');
   setLayersVisibility(map, LAYER_GROUPS.metocean, showMetocean);
 
-  // 7. AIS Vessel Tracks & Traffic (Tabs 01 context, 05–07 investigation & record)
-  const showAis = (visibleLayers.ais ?? true) && (tab === '01' || tab === '05' || tab === '06' || tab === '07');
+  // 7. AIS Vessel Tracks & Traffic (Tabs 01, 02, 04, 05, 06, 07)
+  const showAis = ((visibleLayers.ais ?? true) || (visibleLayers.candidateVessels ?? true) || (visibleLayers.vesselTracks ?? true)) && (tab === '01' || tab === '02' || tab === '04' || tab === '05' || tab === '06' || tab === '07');
   setLayersVisibility(map, LAYER_GROUPS.ais, showAis);
 
   // 7b. Candidate Lead Tag (Tabs 06 & 07 only — NOT Tab 05)
@@ -1390,5 +1458,11 @@ export function updateMapboxLayerVisibility(
   // 10. Annotations / Abstention Banner (Tabs 06 & 07)
   const showAnnotations = tab === '06' || tab === '07';
   setLayersVisibility(map, LAYER_GROUPS.annotations, showAnnotations);
+
+  // 11. SAR Raster Layer (when present and toggled)
+  if (map.getLayer('sar-raster-layer')) {
+    const showRaster = (visibleLayers.sarImage ?? true) && (tab === '01' || tab === '02' || tab === '03');
+    map.setLayoutProperty('sar-raster-layer', 'visibility', showRaster ? 'visible' : 'none');
+  }
 }
 
